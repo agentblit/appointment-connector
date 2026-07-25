@@ -8,14 +8,20 @@ Standalone HTTP connector for Agentblit appointment booking.
 |----------|--------|
 | `/api/1.0/tools/list` | GET |
 | `/api/1.0/tools/call` | POST |
+| `/api/1.0/appointments` | GET |
 | `/api/1.0/connector/status` | GET |
 | `/api/1.0/connector/disconnect` | POST |
 | `/setup` | GET (config UI) |
 | `/api/health` | GET |
 
-Agent context header (required on status/call/disconnect):
+Agent context header (required on status/call/disconnect/appointments):
 
 - `X-Agentblit-Agent-Id`
+
+List appointments for a booker (query params):
+
+- `booker_email` (required)
+- `timezone` (optional IANA timezone for local time fields)
 
 Status response:
 
