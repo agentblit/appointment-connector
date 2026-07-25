@@ -433,7 +433,7 @@ export async function getAppointmentById(appointmentId: string) {
 
 export async function listAppointmentsForBookerInConnector(options: {
   connectorId: string;
-  bookerEmail: string;
+  email: string;
 }) {
   return db
     .select({
@@ -449,8 +449,8 @@ export async function listAppointmentsForBookerInConnector(options: {
       and(
         eq(appointmentEntities.connectorId, options.connectorId),
         eq(
-          appointmentAppointments.bookerEmail,
-          options.bookerEmail.trim().toLowerCase(),
+          appointmentAppointments.email,
+          options.email.trim().toLowerCase(),
         ),
       ),
     )
@@ -515,19 +515,19 @@ export async function hasOverlappingConfirmedAppointment(options: {
 
 export async function createAppointmentRecord(options: {
   entityId: string;
-  bookerName: string;
-  bookerEmail: string;
+  name: string;
+  email: string;
   startTime: Date;
   endTime: Date;
-  bookerUserId?: string;
+  userId?: string;
 }): Promise<AppointmentRow> {
   const inserted = await db
     .insert(appointmentAppointments)
     .values({
       entityId: options.entityId,
-      bookerName: options.bookerName.trim(),
-      bookerEmail: options.bookerEmail.trim().toLowerCase(),
-      bookerUserId: options.bookerUserId ?? APPOINTMENT_ANONYMOUS_USER_ID,
+      name: options.name.trim(),
+      email: options.email.trim().toLowerCase(),
+      userId: options.userId ?? APPOINTMENT_ANONYMOUS_USER_ID,
       startTime: options.startTime,
       endTime: options.endTime,
       status: "confirmed",

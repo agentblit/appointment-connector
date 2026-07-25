@@ -1,1 +1,0 @@
-ALTER TABLE "appointment"."connectors" ADD COLUMN "roles" jsonb DEFAULT '[]'::jsonb NOT NULL;

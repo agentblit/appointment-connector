@@ -41,8 +41,8 @@ export async function GET(request: Request, context: RouteContext) {
     timezone,
     bookings: appointments.map((appointment) => ({
       id: appointment.id,
-      bookerName: appointment.bookerName,
-      bookerEmail: appointment.bookerEmail,
+      name: appointment.name,
+      email: appointment.email,
       startTime: appointment.startTime.toISOString(),
       endTime: appointment.endTime.toISOString(),
       startLocal: formatDateTimeInTimezone(appointment.startTime, timezone),

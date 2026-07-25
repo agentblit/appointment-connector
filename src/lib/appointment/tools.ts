@@ -58,8 +58,8 @@ export const bookAppointmentArgsSchema = z.object({
   entity_id: z.string().uuid("entity_id must be a valid UUID"),
   slot_start: isoDateTimeSchema,
   slot_end: isoDateTimeSchema,
-  booker_name: z.string().trim().min(1, "booker_name is required"),
-  booker_email: z.string().trim().email("booker_email must be a valid email"),
+  name: z.string().trim().min(1, "name is required"),
+  email: z.string().trim().email("email must be a valid email"),
   timezone: userTimezoneSchema,
 });
 
@@ -76,7 +76,7 @@ export const rescheduleAppointmentArgsSchema = z.object({
 });
 
 export const listUserAppointmentsArgsSchema = z.object({
-  booker_email: z.string().trim().email("booker_email must be a valid email"),
+  email: z.string().trim().email("email must be a valid email"),
   timezone: userTimezoneSchema.optional(),
 });
 
@@ -196,11 +196,11 @@ export const APPOINTMENT_TOOLS: Tool[] = [
           type: "string",
           description: "Slot end as ISO 8601 with offset (UTC or local offset)",
         },
-        booker_name: {
+        name: {
           type: "string",
           description: "Name of the person booking the appointment",
         },
-        booker_email: {
+        email: {
           type: "string",
           description: "Email of the person booking the appointment",
         },
@@ -210,8 +210,8 @@ export const APPOINTMENT_TOOLS: Tool[] = [
         "entity_id",
         "slot_start",
         "slot_end",
-        "booker_name",
-        "booker_email",
+        "name",
+        "email",
         "timezone",
       ],
     },
@@ -269,11 +269,11 @@ export const APPOINTMENT_TOOLS: Tool[] = [
   {
     name: "list_user_appointments",
     description:
-      "List all appointments booked by a user (matched by booker email) for this agent, including confirmed and cancelled ones.",
+      "List all appointments booked by a user (matched by email) for this agent, including confirmed and cancelled ones.",
     parameters: {
       type: "object",
       properties: {
-        booker_email: {
+        email: {
           type: "string",
           description: "Email of the person whose appointments to list",
         },
@@ -282,7 +282,7 @@ export const APPOINTMENT_TOOLS: Tool[] = [
           description: `${timezoneProperty.description} Optional; used for local time fields in the response.`,
         },
       },
-      required: ["booker_email"],
+      required: ["email"],
     },
     permissionMode: allow,
     ui: { resourceUri: UI_APPOINTMENTS },

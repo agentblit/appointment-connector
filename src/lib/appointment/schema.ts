@@ -107,9 +107,9 @@ export const appointmentAppointments = appointmentSchema.table(
     entityId: uuid("entity_id")
       .notNull()
       .references(() => appointmentEntities.id, { onDelete: "cascade" }),
-    bookerName: varchar("booker_name", { length: 255 }).notNull(),
-    bookerEmail: varchar("booker_email", { length: 255 }).notNull(),
-    bookerUserId: varchar("booker_user_id", { length: 64 })
+    name: varchar("name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    userId: varchar("user_id", { length: 64 })
       .notNull()
       .default("anonymous"),
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),

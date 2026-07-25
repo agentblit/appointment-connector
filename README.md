@@ -20,7 +20,7 @@ Agent context header (required on status/call/disconnect/appointments):
 
 List appointments for a booker (query params):
 
-- `booker_email` (required)
+- `email` (required)
 - `timezone` (optional IANA timezone for local time fields)
 
 Status response:

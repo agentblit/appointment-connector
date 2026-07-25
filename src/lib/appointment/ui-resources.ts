@@ -310,8 +310,8 @@ export const CHECK_SLOTS_HTML = wrapHtml(
       <button id="clear-btn" class="secondary" type="button">Change</button>
     </div>
     <div class="fields">
-      <input id="booker_name" autocomplete="name" placeholder="Your name" />
-      <input id="booker_email" type="email" autocomplete="email" placeholder="Your email" />
+      <input id="name" autocomplete="name" placeholder="Your name" />
+      <input id="email" type="email" autocomplete="email" placeholder="Your email" />
     </div>
     <button id="book-btn" type="button" style="width:100%;margin-top:8px">Confirm booking</button>
   </div>
@@ -501,8 +501,8 @@ export const CHECK_SLOTS_HTML = wrapHtml(
         return;
       }
       var slot = state.slots[state.selected];
-      var name = document.getElementById("booker_name").value.trim();
-      var email = document.getElementById("booker_email").value.trim();
+      var name = document.getElementById("name").value.trim();
+      var email = document.getElementById("email").value.trim();
       if (!name || !email) {
         status.className = "status err";
         status.textContent = "Name and email are required.";
@@ -515,8 +515,8 @@ export const CHECK_SLOTS_HTML = wrapHtml(
         entity_id: state.entityId || state.args.entity_id,
         slot_start: slot.start,
         slot_end: slot.end,
-        booker_name: name,
-        booker_email: email,
+        name: name,
+        email: email,
         timezone: state.timezone || state.args.timezone
       }).then(function (result) {
         var booking = parseResult(result || {});
@@ -539,8 +539,8 @@ export const CHECK_SLOTS_HTML = wrapHtml(
             slot_start: slot.start,
             slot_end: slot.end,
             timezone: state.timezone || state.args.timezone,
-            booker_name: name,
-            booker_email: email
+            name: name,
+            email: email
           }
         }).catch(function () {
           // Booking already succeeded; context synchronization is best-effort.

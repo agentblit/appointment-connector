@@ -5,50 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1784497564292,
-      "tag": "0000_cute_hardball",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1784500068228,
-      "tag": "0001_redundant_caretaker",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1784842056609,
-      "tag": "0002_chief_rafael_vega",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1784969195346,
-      "tag": "0003_glamorous_madame_hydra",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1784971862306,
-      "tag": "0004_clear_zemo",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1784973818183,
-      "tag": "0005_rename_entity_tags_to_roles",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1784977190891,
-      "tag": "0006_roles_table",
+      "when": 1785010229594,
+      "tag": "0000_yummy_vulcan",
       "breakpoints": true
     }
   ]

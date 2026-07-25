@@ -256,8 +256,8 @@ async function bookAppointmentTool(options: {
 
   const appointment = await createAppointmentRecord({
     entityId: entity.entity.id,
-    bookerName: parsed.data.booker_name,
-    bookerEmail: parsed.data.booker_email,
+    name: parsed.data.name,
+    email: parsed.data.email,
     startTime: slotStart,
     endTime: slotEnd,
   });
@@ -279,8 +279,8 @@ async function bookAppointmentTool(options: {
     end_time: local.end,
     start_local: local.start_local,
     end_local: local.end_local,
-    booker_name: appointment.bookerName,
-    booker_email: appointment.bookerEmail,
+    name: appointment.name,
+    email: appointment.email,
     status: appointment.status,
   });
 }
@@ -441,7 +441,7 @@ async function listUserAppointmentsTool(options: {
   const connector = await assertConfiguredConnector(options.agentId);
   const rows = await listAppointmentsForBookerInConnector({
     connectorId: connector.id,
-    bookerEmail: parsed.data.booker_email,
+    email: parsed.data.email,
   });
 
   const appointments = rows.map(({ appointment, entity }) => {
@@ -449,8 +449,8 @@ async function listUserAppointmentsTool(options: {
       appointment_id: appointment.id,
       entity_id: entity.id,
       entity_name: entity.name,
-      booker_name: appointment.bookerName,
-      booker_email: appointment.bookerEmail,
+      name: appointment.name,
+      email: appointment.email,
       status: appointment.status,
       start_time: appointment.startTime.toISOString(),
       end_time: appointment.endTime.toISOString(),
@@ -469,7 +469,7 @@ async function listUserAppointmentsTool(options: {
 
   const result: Record<string, unknown> = {
     ok: true,
-    booker_email: parsed.data.booker_email.trim().toLowerCase(),
+    email: parsed.data.email.trim().toLowerCase(),
     business_timezone: connector.timezone,
     count: appointments.length,
     appointments,

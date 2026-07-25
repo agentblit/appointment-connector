@@ -47,8 +47,8 @@ type EntityRow = {
 
 type BookingRow = {
   id: string;
-  bookerName: string;
-  bookerEmail: string;
+  name: string;
+  email: string;
   startTime: string;
   endTime: string;
   startLocal: string;
@@ -695,10 +695,10 @@ function DashboardContent() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-foreground">
-                        {booking.bookerName}
+                        {booking.name}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {booking.bookerEmail}
+                        {booking.email}
                       </p>
                       <p className="mt-1.5 font-mono text-xs text-muted-foreground">
                         {formatBookingRange(

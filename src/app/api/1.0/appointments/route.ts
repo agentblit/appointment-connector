@@ -8,7 +8,7 @@ import { listUserAppointmentsArgsSchema } from "@/lib/appointment/tools";
 import { requireAgentHeaders } from "@/lib/auth/http-connector-auth";
 
 /**
- * GET /api/1.0/appointments?booker_email=...&timezone=...
+ * GET /api/1.0/appointments?email=...&timezone=...
  *
  * Lists appointments for a booker (matched by email) on this agent.
  * Requires X-Agentblit-Agent-Id.
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const parsed = listUserAppointmentsArgsSchema.safeParse({
-    booker_email: url.searchParams.get("booker_email") ?? "",
+    email: url.searchParams.get("email") ?? "",
     timezone: url.searchParams.get("timezone") || undefined,
   });
   if (!parsed.success) {
@@ -48,10 +48,10 @@ export async function GET(request: Request) {
     );
   }
 
-  const bookerEmail = parsed.data.booker_email.trim().toLowerCase();
+  const email = parsed.data.email.trim().toLowerCase();
   const rows = await listAppointmentsForBookerInConnector({
     connectorId: connector.id,
-    bookerEmail,
+    email,
   });
 
   const appointments = rows.map(({ appointment, entity }) => {
@@ -59,8 +59,8 @@ export async function GET(request: Request) {
       appointment_id: appointment.id,
       entity_id: entity.id,
       entity_name: entity.name,
-      booker_name: appointment.bookerName,
-      booker_email: appointment.bookerEmail,
+      name: appointment.name,
+      email: appointment.email,
       status: appointment.status,
       start_time: appointment.startTime.toISOString(),
       end_time: appointment.endTime.toISOString(),
@@ -80,7 +80,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    booker_email: bookerEmail,
+    email,
     business_timezone: connector.timezone,
     count: appointments.length,
     appointments,
