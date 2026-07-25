@@ -28,7 +28,6 @@ type ConnectorSummary = {
   entityLabel: string;
   timezone: string;
   slotDurationMinutes: number;
-  reminderWindowMinutes: number;
 };
 
 type EntityRow = {

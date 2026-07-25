@@ -4,12 +4,9 @@ import {
   desc,
   eq,
   gte,
-  gt,
   inArray,
-  isNull,
   lte,
   ne,
-  sql,
 } from "drizzle-orm";
 import { APPOINTMENT_ANONYMOUS_USER_ID } from "@/lib/appointment/constants";
 import {
@@ -55,7 +52,6 @@ export async function upsert(options: {
   entityLabel: string;
   timezone: string;
   slotDurationMinutes: number;
-  reminderWindowMinutes: number;
 }): Promise<AppointmentConnectorRow> {
   const inserted = await db
     .insert(appointmentConnectors)
@@ -65,7 +61,6 @@ export async function upsert(options: {
       entityLabel: options.entityLabel.trim(),
       timezone: options.timezone,
       slotDurationMinutes: options.slotDurationMinutes,
-      reminderWindowMinutes: options.reminderWindowMinutes,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -74,7 +69,6 @@ export async function upsert(options: {
         entityLabel: options.entityLabel.trim(),
         timezone: options.timezone,
         slotDurationMinutes: options.slotDurationMinutes,
-        reminderWindowMinutes: options.reminderWindowMinutes,
         updatedAt: new Date(),
       },
       // Only update when the requesting user actually owns the existing row;
@@ -406,64 +400,10 @@ export async function rescheduleAppointmentRecord(options: {
     .set({
       startTime: options.startTime,
       endTime: options.endTime,
-      // New slot needs its own reminder.
-      reminderSentAt: null,
       updatedAt: new Date(),
     })
     .where(eq(appointmentAppointments.id, options.appointmentId))
     .returning();
-  return updated[0] ?? null;
-}
-
-export type DueReminderRow = {
-  appointment: AppointmentRow;
-  entity: AppointmentEntityRow;
-  connector: AppointmentConnectorRow;
-};
-
-/** Confirmed, upcoming appointments inside their reminder window, not yet emailed. */
-export async function listDueReminders(): Promise<DueReminderRow[]> {
-  return db
-    .select({
-      appointment: appointmentAppointments,
-      entity: appointmentEntities,
-      connector: appointmentConnectors,
-    })
-    .from(appointmentAppointments)
-    .innerJoin(
-      appointmentEntities,
-      eq(appointmentAppointments.entityId, appointmentEntities.id),
-    )
-    .innerJoin(
-      appointmentConnectors,
-      eq(appointmentEntities.connectorId, appointmentConnectors.id),
-    )
-    .where(
-      and(
-        eq(appointmentAppointments.status, "confirmed"),
-        isNull(appointmentAppointments.reminderSentAt),
-        gt(appointmentAppointments.startTime, sql`now()`),
-        // now() < start_time <= now() + reminder_window
-        sql`${appointmentAppointments.startTime} <= now() + make_interval(mins => ${appointmentConnectors.reminderWindowMinutes})`,
-      ),
-    )
-    .orderBy(asc(appointmentAppointments.startTime));
-}
-
-export async function markReminderSent(appointmentId: string) {
-  const updated = await db
-    .update(appointmentAppointments)
-    .set({
-      reminderSentAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(appointmentAppointments.id, appointmentId),
-        isNull(appointmentAppointments.reminderSentAt),
-      ),
-    )
-    .returning({ id: appointmentAppointments.id });
   return updated[0] ?? null;
 }
 

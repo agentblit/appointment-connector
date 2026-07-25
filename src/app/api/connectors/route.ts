@@ -22,7 +22,6 @@ export async function GET(request: Request) {
       entityLabel: connector.entityLabel,
       timezone: connector.timezone,
       slotDurationMinutes: connector.slotDurationMinutes,
-      reminderWindowMinutes: connector.reminderWindowMinutes,
     })),
   });
 }

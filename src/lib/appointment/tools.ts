@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  APPOINTMENT_REMINDER_WINDOW_MINUTES,
-  APPOINTMENT_SLOT_DURATION_MINUTES,
-} from "@/lib/appointment/constants";
+import { APPOINTMENT_SLOT_DURATION_MINUTES } from "@/lib/appointment/constants";
 import { isValidIanaTimezone } from "@/lib/appointment/appointment-utils";
 
 /** Matches agentblit `ToolPermissionMode` wire values. */
@@ -99,16 +96,6 @@ export const appointmentConnectorConfigSchema = z.object({
           value as (typeof APPOINTMENT_SLOT_DURATION_MINUTES)[number],
         ),
       "Invalid slot duration",
-    ),
-  reminderWindowMinutes: z
-    .number()
-    .int()
-    .refine(
-      (value) =>
-        APPOINTMENT_REMINDER_WINDOW_MINUTES.includes(
-          value as (typeof APPOINTMENT_REMINDER_WINDOW_MINUTES)[number],
-        ),
-      "Invalid reminder window",
     ),
   finalize: z.boolean().optional(),
 });

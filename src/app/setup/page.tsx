@@ -20,7 +20,6 @@ import {
 import { EntityManager } from "@/components/entity-manager";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
-  APPOINTMENT_REMINDER_WINDOW_OPTIONS,
   APPOINTMENT_SLOT_DURATION_OPTIONS,
   APPOINTMENT_TIMEZONES,
 } from "@/lib/appointment/constants";
@@ -41,7 +40,6 @@ type ConnectorConfig = {
   entityLabel: string;
   timezone: string;
   slotDurationMinutes: number;
-  reminderWindowMinutes: number;
 };
 
 type SetupClaims = {
@@ -59,7 +57,6 @@ const defaultConfig: ConnectorConfig = {
   entityLabel: "Doctor",
   timezone: "UTC",
   slotDurationMinutes: 30,
-  reminderWindowMinutes: 10,
 };
 
 const inputClassName =
@@ -281,7 +278,6 @@ function AppointmentSetupWizard() {
           entityLabel: string;
           timezone: string;
           slotDurationMinutes: number;
-          reminderWindowMinutes: number;
           entities: EntityRow[];
         } | null;
       };
@@ -301,8 +297,6 @@ function AppointmentSetupWizard() {
           entityLabel: data.connector.entityLabel,
           timezone: savedTimezone,
           slotDurationMinutes: data.connector.slotDurationMinutes,
-          reminderWindowMinutes:
-            data.connector.reminderWindowMinutes ?? 10,
         });
         setEntities(data.connector.entities);
         setAvailabilityDrafts(
@@ -378,7 +372,6 @@ function AppointmentSetupWizard() {
             entityLabel: config.entityLabel,
             timezone: config.timezone,
             slotDurationMinutes: config.slotDurationMinutes,
-            reminderWindowMinutes: config.reminderWindowMinutes,
             finalize,
           }),
         },
@@ -746,33 +739,6 @@ function AppointmentSetupWizard() {
                 </option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <label className={labelClassName} htmlFor="reminder-window">
-              Reminder window
-            </label>
-            <select
-              id="reminder-window"
-              className={inputClassName}
-              value={config.reminderWindowMinutes}
-              onChange={(event) =>
-                setConfig((current) => ({
-                  ...current,
-                  reminderWindowMinutes: Number(event.target.value),
-                }))
-              }
-            >
-              {APPOINTMENT_REMINDER_WINDOW_OPTIONS.map((option) => (
-                <option key={option.minutes} value={option.minutes}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <p className={hintClassName}>
-              Send a reminder email to the booker this many minutes before each
-              appointment starts.
-            </p>
           </div>
 
           <div className={`${footerClassName} justify-end`}>

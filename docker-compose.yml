@@ -16,28 +16,5 @@ services:
       timeout: 3s
       retries: 10
 
-  # Optional local reminder poller (app must be running on host :3080).
-  # Set REMINDER_CRON_SECRET in .env to match the app.
-  reminder-cron:
-    profiles: ["reminders"]
-    image: curlimages/curl:8.12.1
-    container_name: appointment-tool-reminder-cron
-    env_file:
-      - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "reminder-cron: polling every 3m"
-        while true; do
-          curl -fsS -X POST \
-            -H "Authorization: Bearer $${REMINDER_CRON_SECRET}" \
-            "http://host.docker.internal:3080/api/reminders/process" \
-            || echo "reminder-cron: request failed"
-          sleep 180
-        done
-    restart: unless-stopped
-
 volumes:
   appointment_pg_data:

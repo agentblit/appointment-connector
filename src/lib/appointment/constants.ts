@@ -11,17 +11,6 @@ export const APPOINTMENT_SLOT_DURATION_OPTIONS = [
 export const APPOINTMENT_SLOT_DURATION_MINUTES =
   APPOINTMENT_SLOT_DURATION_OPTIONS.map((option) => option.minutes);
 
-export const APPOINTMENT_REMINDER_WINDOW_OPTIONS = [
-  { label: "5 min before", minutes: 5 },
-  { label: "10 min before", minutes: 10 },
-  { label: "15 min before", minutes: 15 },
-  { label: "30 min before", minutes: 30 },
-  { label: "1 hr before", minutes: 60 },
-] as const;
-
-export const APPOINTMENT_REMINDER_WINDOW_MINUTES =
-  APPOINTMENT_REMINDER_WINDOW_OPTIONS.map((option) => option.minutes);
-
 export const APPOINTMENT_TIMEZONES = [
   "UTC",
   "America/New_York",
