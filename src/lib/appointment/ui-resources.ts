@@ -539,7 +539,8 @@ export const CHECK_SLOTS_HTML = wrapHtml(
             slot_start: slot.start,
             slot_end: slot.end,
             timezone: state.timezone || state.args.timezone,
-            booker_name: name
+            booker_name: name,
+            booker_email: email
           }
         }).catch(function () {
           // Booking already succeeded; context synchronization is best-effort.
