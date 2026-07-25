@@ -13,6 +13,14 @@ type RouteContext = {
   params: Promise<{ agentId: string }>;
 };
 
+function serializeRole(role: { id: string; name: string; description: string }) {
+  return {
+    id: role.id,
+    name: role.name,
+    description: role.description,
+  };
+}
+
 export async function GET(request: Request, context: RouteContext) {
   const { agentId } = await context.params;
   const auth = await requireConnectorSetupAuth(request, agentId);
@@ -37,11 +45,12 @@ export async function GET(request: Request, context: RouteContext) {
       entityLabel: connector.entityLabel,
       timezone: connector.timezone,
       slotDurationMinutes: connector.slotDurationMinutes,
+      roles: connector.roles.map(serializeRole),
       entities: connector.entities.map((entity) => ({
         id: entity.id,
         name: entity.name,
         description: entity.description,
-        tags: entity.tags ?? [],
+        roleIds: entity.roleIds ?? [],
         isActive: entity.isActive,
         availabilityRules: entity.availabilityRules.map((rule) => ({
           id: rule.id,
@@ -86,12 +95,13 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const body = bodyParse.data;
-  const connector = await upsert({
+  const { connector, roles } = await upsert({
     agentId,
     userId: auth.userId,
     entityLabel: body.entityLabel,
     timezone: body.timezone,
     slotDurationMinutes: body.slotDurationMinutes,
+    roles: body.roles,
   });
 
   // finalize:true only persists config; agentblit reconnects via status.
@@ -102,6 +112,7 @@ export async function POST(request: Request, context: RouteContext) {
       entityLabel: connector.entityLabel,
       timezone: connector.timezone,
       slotDurationMinutes: connector.slotDurationMinutes,
+      roles: roles.map(serializeRole),
     },
     finalize: Boolean(body.finalize),
   });

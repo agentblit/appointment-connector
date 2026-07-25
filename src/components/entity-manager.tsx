@@ -1,18 +1,26 @@
 "use client";
 
-import { ChevronRight, Pencil, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Pencil, Trash2, X } from "lucide-react";
 import {
+  useEffect,
+  useId,
+  useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent,
-  type MouseEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
+
+export type EntityManagerRole = {
+  id: string;
+  name: string;
+  description: string;
+};
 
 export type EntityManagerItem = {
   id: string;
   name: string;
   description?: string | null;
-  tags?: string[] | null;
+  roleIds?: string[] | null;
 };
 
 function pluralize(label: string) {
@@ -23,6 +31,8 @@ function pluralize(label: string) {
 type EntityManagerProps = {
   entityLabel: string;
   entities: EntityManagerItem[];
+  /** Valid roles from connector settings; empty means roles are not used. */
+  availableRoles?: EntityManagerRole[];
   pendingAction: string | null;
   loading?: boolean;
   disabled?: boolean;
@@ -30,110 +40,198 @@ type EntityManagerProps = {
   onAdd: (input: {
     name: string;
     description: string;
-    tags: string[];
+    roleIds: string[];
   }) => void | Promise<void>;
   onUpdate: (input: {
     entityId: string;
     name: string;
     description: string;
-    tags: string[];
+    roleIds: string[];
   }) => void | Promise<void>;
   onDelete: (entityId: string) => void | Promise<void>;
   onSelect?: (entityId: string) => void;
   onValidationError?: (message: string) => void;
 };
 
-function TagsInput({
-  tags,
-  onChange,
-  disabled,
-  placeholder = "Tags (optional)",
-  id,
+function RoleChips({
+  roleIds,
+  availableRoles,
 }: {
-  tags: string[];
-  onChange: (tags: string[]) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  id?: string;
+  roleIds: string[];
+  availableRoles: EntityManagerRole[];
 }) {
-  const [draft, setDraft] = useState("");
+  if (roleIds.length === 0) return null;
+  const labels = roleIds.map(
+    (id) => availableRoles.find((role) => role.id === id)?.name ?? id,
+  );
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {labels.map((label, index) => (
+        <span
+          key={`${roleIds[index]}-${label}`}
+          className="inline-flex rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary"
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
-  function addTag(raw: string) {
-    const value = raw.trim();
-    if (!value) return;
-    const exists = tags.some(
-      (tag) => tag.toLowerCase() === value.toLowerCase(),
-    );
-    if (exists) {
-      setDraft("");
+function RoleMultiSelect({
+  id,
+  selected,
+  onChange,
+  availableRoles,
+  disabled,
+}: {
+  id?: string;
+  selected: string[];
+  onChange: (roles: string[]) => void;
+  availableRoles: EntityManagerRole[];
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  function toggle(roleId: string) {
+    if (selected.includes(roleId)) {
+      onChange(selected.filter((id) => id !== roleId));
       return;
     }
-    onChange([...tags, value]);
-    setDraft("");
+    onChange([...selected, roleId]);
   }
 
-  function removeTag(index: number) {
-    onChange(tags.filter((_, i) => i !== index));
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      addTag(draft);
-      return;
-    }
-    if (event.key === "Backspace" && !draft && tags.length > 0) {
-      event.preventDefault();
-      removeTag(tags.length - 1);
-    }
-  }
-
-  function handleRemoveClick(
-    event: MouseEvent<HTMLButtonElement>,
-    index: number,
-  ) {
+  function remove(roleId: string, event: ReactMouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    removeTag(index);
+    onChange(selected.filter((id) => id !== roleId));
+  }
+
+  function roleLabel(roleId: string) {
+    return availableRoles.find((role) => role.id === roleId)?.name ?? roleId;
   }
 
   return (
-    <div
-      className={`flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-1.5 rounded-lg border border-border bg-muted px-2 py-1.5 transition-shadow focus-within:border-ring focus-within:bg-card focus-within:ring-2 focus-within:ring-ring/30 ${
-        disabled ? "opacity-50" : ""
-      }`}
-    >
-      {tags.map((tag, index) => (
-        <span
-          key={`${tag}-${index}`}
-          className="group/tag relative inline-flex max-w-full items-center rounded-md bg-card px-2 py-0.5 text-xs font-medium text-foreground ring-1 ring-border"
-        >
-          <span className="truncate pr-0 transition-[padding] group-hover/tag:pr-4">
-            {tag}
-          </span>
-          <button
-            type="button"
-            className="absolute right-0.5 top-1/2 inline-flex h-4 w-4 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/tag:opacity-100 disabled:cursor-not-allowed"
-            onClick={(event) => handleRemoveClick(event, index)}
-            disabled={disabled}
-            aria-label={`Remove tag ${tag}`}
-            tabIndex={-1}
-          >
-            <X className="h-3 w-3" aria-hidden="true" />
-          </button>
-        </span>
-      ))}
-      <input
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
         id={id}
-        className="min-w-28 flex-1 bg-transparent px-1 py-0.5 text-sm text-foreground outline-none placeholder:text-placeholder-foreground disabled:cursor-not-allowed"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => addTag(draft)}
-        placeholder={tags.length === 0 ? placeholder : "Add tag…"}
+        className={`flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-left transition-shadow focus:border-ring focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 ${
+          open ? "border-ring bg-card ring-2 ring-ring/30" : ""
+        }`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
         disabled={disabled}
-        aria-label="Tags"
-      />
+        onClick={() => setOpen((current) => !current)}
+      >
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {selected.length === 0 ? (
+            <span className="px-0.5 text-sm text-placeholder-foreground">
+              Roles (optional)
+            </span>
+          ) : (
+            selected.map((roleId) => {
+              const label = roleLabel(roleId);
+              return (
+                <span
+                  key={roleId}
+                  className="inline-flex max-w-full items-center gap-1 rounded-md bg-card px-2 py-0.5 text-xs font-medium text-foreground ring-1 ring-border"
+                >
+                  <span className="truncate">{label}</span>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    className="inline-flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={`Remove ${label}`}
+                    onClick={(event) => remove(roleId, event)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onChange(selected.filter((id) => id !== roleId));
+                      }
+                    }}
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </span>
+                </span>
+              );
+            })
+          )}
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {open ? (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-multiselectable="true"
+          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-border bg-card py-1 shadow-lg"
+        >
+          {availableRoles.map((role) => {
+            const checked = selected.includes(role.id);
+            return (
+              <li key={role.id} role="option" aria-selected={checked}>
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-muted"
+                  onClick={() => toggle(role.id)}
+                >
+                  <span
+                    className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      checked
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-muted"
+                    }`}
+                    aria-hidden="true"
+                  >
+                    {checked ? <Check className="h-3 w-3" /> : null}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">
+                      {role.name}
+                    </span>
+                    {role.description ? (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {role.description}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -141,6 +239,7 @@ function TagsInput({
 export function EntityManager({
   entityLabel,
   entities,
+  availableRoles = [],
   pendingAction,
   loading = false,
   disabled = false,
@@ -153,16 +252,19 @@ export function EntityManager({
 }: EntityManagerProps) {
   const [newEntityName, setNewEntityName] = useState("");
   const [newEntityDescription, setNewEntityDescription] = useState("");
-  const [newEntityTags, setNewEntityTags] = useState<string[]>([]);
+  const [newEntityRoles, setNewEntityRoles] = useState<string[]>([]);
   const [editingEntityId, setEditingEntityId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editRoles, setEditRoles] = useState<string[]>([]);
 
   const isBusy = disabled || pendingAction !== null;
+  const showRoles = availableRoles.length > 0;
 
   const inputCls =
     "h-10 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-shadow placeholder:text-placeholder-foreground focus:border-ring focus:bg-card focus:ring-2 focus:ring-ring/30";
+  const textareaCls =
+    "min-h-20 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none transition-shadow placeholder:text-placeholder-foreground focus:border-ring focus:bg-card focus:ring-2 focus:ring-ring/30";
   const btnOutlineCls =
     "inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50";
   const btnPrimaryCls =
@@ -178,11 +280,11 @@ export function EntityManager({
       await onAdd({
         name: newEntityName.trim(),
         description: newEntityDescription.trim(),
-        tags: newEntityTags,
+        roleIds: showRoles ? newEntityRoles : [],
       });
       setNewEntityName("");
       setNewEntityDescription("");
-      setNewEntityTags([]);
+      setNewEntityRoles([]);
     } catch {
       // Parent reports the error.
     }
@@ -192,14 +294,14 @@ export function EntityManager({
     setEditingEntityId(entity.id);
     setEditName(entity.name);
     setEditDescription(entity.description ?? "");
-    setEditTags(entity.tags ?? []);
+    setEditRoles(entity.roleIds ?? []);
   }
 
   function cancelEdit() {
     setEditingEntityId(null);
     setEditName("");
     setEditDescription("");
-    setEditTags([]);
+    setEditRoles([]);
   }
 
   async function handleSave(event: FormEvent) {
@@ -214,7 +316,7 @@ export function EntityManager({
         entityId: editingEntityId,
         name: editName.trim(),
         description: editDescription.trim(),
-        tags: editTags,
+        roleIds: showRoles ? editRoles : [],
       });
       cancelEdit();
     } catch {
@@ -229,37 +331,41 @@ export function EntityManager({
           Add {entityLabel.toLowerCase()}
         </p>
         <form className="flex flex-col gap-2" onSubmit={(e) => void handleAdd(e)}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              id="entity-name"
-              className={`${inputCls} sm:w-44 sm:shrink-0`}
-              value={newEntityName}
-              onChange={(event) => setNewEntityName(event.target.value)}
-              placeholder={`${entityLabel} name`}
+          <input
+            id="entity-name"
+            className={inputCls}
+            value={newEntityName}
+            onChange={(event) => setNewEntityName(event.target.value)}
+            placeholder={`${entityLabel} name`}
+            disabled={isBusy}
+          />
+          {showRoles ? (
+            <RoleMultiSelect
+              id="entity-roles"
+              selected={newEntityRoles}
+              onChange={setNewEntityRoles}
+              availableRoles={availableRoles}
               disabled={isBusy}
             />
-            <input
-              id="entity-description"
-              className={`${inputCls} min-w-0 flex-1`}
-              value={newEntityDescription}
-              onChange={(event) => setNewEntityDescription(event.target.value)}
-              placeholder="Description (optional)"
-              disabled={isBusy}
-            />
+          ) : null}
+          <textarea
+            id="entity-description"
+            className={textareaCls}
+            value={newEntityDescription}
+            onChange={(event) => setNewEntityDescription(event.target.value)}
+            placeholder="Description (optional)"
+            disabled={isBusy}
+            rows={3}
+          />
+          <div className="flex justify-end">
             <button
               type="submit"
-              className={`${btnPrimaryCls} shrink-0`}
+              className={btnPrimaryCls}
               disabled={isBusy || !newEntityName.trim()}
             >
               {pendingAction === "add-entity" ? "Adding…" : "Add"}
             </button>
           </div>
-          <TagsInput
-            id="entity-tags"
-            tags={newEntityTags}
-            onChange={setNewEntityTags}
-            disabled={isBusy}
-          />
         </form>
       </div>
 
@@ -280,7 +386,7 @@ export function EntityManager({
           <ul className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             {entities.map((entity, index) => {
               const editing = editingEntityId === entity.id;
-              const tags = entity.tags ?? [];
+              const entityRoles = entity.roleIds ?? [];
 
               if (editing) {
                 return (
@@ -301,13 +407,16 @@ export function EntityManager({
                         aria-label="Entity name"
                         autoFocus
                       />
-                      <TagsInput
-                        tags={editTags}
-                        onChange={setEditTags}
-                        disabled={isBusy}
-                      />
-                      <input
-                        className={inputCls}
+                      {showRoles ? (
+                        <RoleMultiSelect
+                          selected={editRoles}
+                          onChange={setEditRoles}
+                          availableRoles={availableRoles}
+                          disabled={isBusy}
+                        />
+                      ) : null}
+                      <textarea
+                        className={textareaCls}
                         value={editDescription}
                         onChange={(event) =>
                           setEditDescription(event.target.value)
@@ -315,6 +424,7 @@ export function EntityManager({
                         placeholder="Description (optional)"
                         disabled={isBusy}
                         aria-label="Entity description"
+                        rows={3}
                       />
                       <div className="flex gap-2 pt-1">
                         <button
@@ -356,22 +466,14 @@ export function EntityManager({
                       <p className="text-sm font-medium text-foreground">
                         {entity.name}
                       </p>
+                      <RoleChips
+                        roleIds={entityRoles}
+                        availableRoles={availableRoles}
+                      />
                       {entity.description ? (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {entity.description}
                         </p>
-                      ) : null}
-                      {tags.length > 0 ? (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
                       ) : null}
                     </button>
                   ) : (
@@ -379,22 +481,14 @@ export function EntityManager({
                       <p className="text-sm font-medium text-foreground">
                         {entity.name}
                       </p>
+                      <RoleChips
+                        roleIds={entityRoles}
+                        availableRoles={availableRoles}
+                      />
                       {entity.description ? (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {entity.description}
                         </p>
-                      ) : null}
-                      {tags.length > 0 ? (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
                       ) : null}
                     </div>
                   )}

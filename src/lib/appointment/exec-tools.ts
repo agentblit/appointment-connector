@@ -9,7 +9,10 @@ import {
   listAppointmentsForEntityInRange,
   listAvailabilityRulesForEntity,
   listEntities,
+  listRoles,
+  mapRolesById,
   rescheduleAppointmentRecord,
+  resolveRoleSummaries,
 } from "@/lib/appointment/repo";
 import {
   formatDateInTimezone,
@@ -90,17 +93,26 @@ async function listEntitiesTool(
   agentId: string,
 ): Promise<AppointmentToolCallResult> {
   const connector = await assertConfiguredConnector(agentId);
-  const entities = await listEntities(connector.id);
+  const [entities, roles] = await Promise.all([
+    listEntities(connector.id),
+    listRoles(connector.id),
+  ]);
+  const rolesById = mapRolesById(roles);
 
   return mcpStyleResult({
     ok: true,
     entity_label: connector.entityLabel,
     business_timezone: connector.timezone,
+    roles: roles.map((role) => ({
+      id: role.id,
+      name: role.name,
+      description: role.description,
+    })),
     entities: entities.map((entity) => ({
       id: entity.id,
       name: entity.name,
       description: entity.description,
-      tags: entity.tags ?? [],
+      roles: resolveRoleSummaries(entity.roleIds, rolesById),
       is_active: entity.isActive,
     })),
   });

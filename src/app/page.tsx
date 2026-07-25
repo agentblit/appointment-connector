@@ -23,6 +23,12 @@ import { APPOINTMENT_CONNECTOR_KEY } from "@/lib/appointment/tools";
 import { authClient } from "@/lib/auth-client";
 import { Calendar, ChevronRight, Link2 } from "lucide-react";
 
+type ConnectorRole = {
+  id: string;
+  name: string;
+  description: string;
+};
+
 type ConnectorSummary = {
   agentId: string;
   entityLabel: string;
@@ -34,7 +40,7 @@ type EntityRow = {
   id: string;
   name: string;
   description?: string | null;
-  tags?: string[] | null;
+  roleIds?: string[] | null;
   isActive?: boolean;
   availabilityRules: AvailabilityRule[];
 };
@@ -125,6 +131,7 @@ function DashboardContent() {
   const [connectors, setConnectors] = useState<ConnectorSummary[]>([]);
   const [entities, setEntities] = useState<EntityRow[]>([]);
   const [entityLabel, setEntityLabel] = useState("Entity");
+  const [roles, setRoles] = useState<ConnectorRole[]>([]);
   const [timezone, setTimezone] = useState("UTC");
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [availabilityDraft, setAvailabilityDraft] = useState<
@@ -197,6 +204,7 @@ function DashboardContent() {
         connector?: {
           entityLabel: string;
           timezone: string;
+          roles?: ConnectorRole[];
           entities: EntityRow[];
         } | null;
       };
@@ -206,10 +214,12 @@ function DashboardContent() {
       if (!data.connector) {
         setEntities([]);
         setEntityLabel("Entity");
+        setRoles([]);
         return;
       }
       setEntityLabel(data.connector.entityLabel);
       setTimezone(data.connector.timezone);
+      setRoles(data.connector.roles ?? []);
       setEntities(data.connector.entities);
     } catch (loadError) {
       setError(
@@ -218,6 +228,7 @@ function DashboardContent() {
           : "Failed to load connector",
       );
       setEntities([]);
+      setRoles([]);
     } finally {
       setPendingAction(null);
     }
@@ -319,7 +330,7 @@ function DashboardContent() {
   async function handleAddEntity(input: {
     name: string;
     description: string;
-    tags: string[];
+    roleIds: string[];
   }) {
     if (!agentIdParam) return;
 
@@ -335,7 +346,7 @@ function DashboardContent() {
           body: JSON.stringify({
             name: input.name,
             description: input.description || undefined,
-            tags: input.tags,
+            roleIds: input.roleIds,
           }),
         },
       );
@@ -367,7 +378,7 @@ function DashboardContent() {
     entityId: string;
     name: string;
     description: string;
-    tags: string[];
+    roleIds: string[];
   }) {
     if (!agentIdParam) return;
 
@@ -383,7 +394,7 @@ function DashboardContent() {
           body: JSON.stringify({
             name: input.name,
             description: input.description || undefined,
-            tags: input.tags,
+            roleIds: input.roleIds,
           }),
         },
       );
@@ -404,7 +415,7 @@ function DashboardContent() {
                   ...entity,
                   name: data.entity!.name,
                   description: data.entity!.description,
-                  tags: data.entity!.tags ?? [],
+                  roleIds: data.entity!.roleIds ?? [],
                 }
               : entity,
           )
@@ -622,6 +633,7 @@ function DashboardContent() {
         <EntityManager
           entityLabel={entityLabel}
           entities={entities}
+          availableRoles={roles}
           pendingAction={pendingAction}
           loading={pendingAction === "entities"}
           disabled={savingAvailability}

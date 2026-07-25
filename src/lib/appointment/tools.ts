@@ -80,6 +80,12 @@ export const listUserAppointmentsArgsSchema = z.object({
   timezone: userTimezoneSchema.optional(),
 });
 
+export const appointmentRoleSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1, "Role name is required").max(100),
+  description: z.string().trim().max(500).optional().default(""),
+});
+
 export const appointmentConnectorConfigSchema = z.object({
   entityLabel: z.string().trim().min(1, "Entity label is required").max(100),
   timezone: z
@@ -97,17 +103,15 @@ export const appointmentConnectorConfigSchema = z.object({
         ),
       "Invalid slot duration",
     ),
+  roles: z.array(appointmentRoleSchema).max(50).optional().default([]),
   finalize: z.boolean().optional(),
 });
 
 export const appointmentEntitySchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(255),
-  description: z.string().trim().max(1000).optional(),
-  tags: z
-    .array(z.string().trim().min(1).max(64))
-    .max(20)
-    .optional()
-    .default([]),
+  description: z.string().trim().max(2000).optional(),
+  /** Selected role ids from connector roles. */
+  roleIds: z.array(z.string().uuid()).max(20).optional().default([]),
 });
 
 export const appointmentAvailabilityRulesSchema = z.object({
@@ -138,7 +142,7 @@ export const APPOINTMENT_TOOLS: Tool[] = [
   {
     name: "list_entities",
     description:
-      "List all configured bookable entities (providers) for this agent, including IDs, names, descriptions, and tags. ALWAYS call this first when the user asks who/what to see, which provider fits a symptom or need, or wants a recommendation. Suggest matching entities in chat and wait for the user to choose one before calling check_available_slots or book_appointment.",
+      "List all configured bookable entities (providers) for this agent, including IDs, names, descriptions, roles, and optional role assignments. ALWAYS call this first when the user asks who/what to see, which provider fits a symptom or need, or wants a recommendation. Suggest matching entities in chat and wait for the user to choose one before calling check_available_slots or book_appointment.",
     parameters: {
       type: "object",
       properties: {},

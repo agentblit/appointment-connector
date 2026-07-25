@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import {
   deleteEntity,
   getEntityForAgent,
+  listRoles,
+  resolveEntityRoleIds,
   updateEntity,
 } from "@/lib/appointment/repo";
 import { appointmentEntitySchema } from "@/lib/appointment/tools";
@@ -50,12 +52,21 @@ export async function PUT(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
+  const availableRoles = await listRoles(owned.connector.id);
+  const resolved = resolveEntityRoleIds({
+    availableRoles,
+    selectedRoleIds: bodyParse.data.roleIds,
+  });
+  if (!resolved.ok) {
+    return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+  }
+
   try {
     const updated = await updateEntity({
       entityId,
       name: bodyParse.data.name,
       description: bodyParse.data.description,
-      tags: bodyParse.data.tags,
+      roleIds: resolved.roleIds,
     });
     return NextResponse.json({ ok: true, entity: updated });
   } catch (error) {

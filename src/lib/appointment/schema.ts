@@ -34,6 +34,31 @@ export const appointmentConnectors = appointmentSchema.table(
   ],
 );
 
+export const appointmentRoles = appointmentSchema.table(
+  "roles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    connectorId: uuid("connector_id")
+      .notNull()
+      .references(() => appointmentConnectors.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    description: text("description").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("appointment_roles_connector_name_uidx").on(
+      t.connectorId,
+      t.name,
+    ),
+    index("appointment_roles_connector_id_idx").on(t.connectorId),
+  ],
+);
+
 export const appointmentEntities = appointmentSchema.table(
   "entities",
   {
@@ -43,7 +68,7 @@ export const appointmentEntities = appointmentSchema.table(
       .references(() => appointmentConnectors.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
-    tags: text("tags").array().notNull().default([]),
+    roleIds: uuid("role_ids").array().notNull().default([]),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -106,6 +131,7 @@ export const appointmentAppointments = appointmentSchema.table(
 );
 
 export type AppointmentConnectorRow = typeof appointmentConnectors.$inferSelect;
+export type AppointmentRoleRow = typeof appointmentRoles.$inferSelect;
 export type AppointmentEntityRow = typeof appointmentEntities.$inferSelect;
 export type AppointmentAvailabilityRuleRow =
   typeof appointmentAvailabilityRules.$inferSelect;

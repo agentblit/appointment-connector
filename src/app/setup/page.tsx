@@ -24,7 +24,7 @@ import {
   APPOINTMENT_TIMEZONES,
 } from "@/lib/appointment/constants";
 import { authClient } from "@/lib/auth-client";
-import { Calendar } from "lucide-react";
+import { Calendar, ChevronDown } from "lucide-react";
 
 type Step = "config" | "entities" | "availability";
 
@@ -32,14 +32,21 @@ type EntityRow = {
   id: string;
   name: string;
   description?: string | null;
-  tags?: string[] | null;
+  roleIds?: string[] | null;
   availabilityRules: AvailabilityRule[];
+};
+
+type ConnectorRole = {
+  id?: string;
+  name: string;
+  description: string;
 };
 
 type ConnectorConfig = {
   entityLabel: string;
   timezone: string;
   slotDurationMinutes: number;
+  roles: ConnectorRole[];
 };
 
 type SetupClaims = {
@@ -57,7 +64,11 @@ const defaultConfig: ConnectorConfig = {
   entityLabel: "Doctor",
   timezone: "UTC",
   slotDurationMinutes: 30,
+  roles: [],
 };
+
+const textareaClassName =
+  "min-h-20 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-ring focus:bg-card focus:ring-2 focus:ring-ring/30";
 
 const inputClassName =
   "h-10 w-full rounded-lg border border-border bg-muted px-3 text-sm text-foreground outline-none transition-shadow focus:border-ring focus:bg-card focus:ring-2 focus:ring-ring/30";
@@ -226,6 +237,9 @@ function AppointmentSetupWizard() {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [config, setConfig] = useState<ConnectorConfig>(defaultConfig);
+  const [configDirty, setConfigDirty] = useState(false);
+  const [connectorExists, setConnectorExists] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(true);
   const [timezoneOptions, setTimezoneOptions] = useState<string[]>([
     ...APPOINTMENT_TIMEZONES,
   ]);
@@ -278,6 +292,7 @@ function AppointmentSetupWizard() {
           entityLabel: string;
           timezone: string;
           slotDurationMinutes: number;
+          roles?: Array<{ id: string; name: string; description: string }>;
           entities: EntityRow[];
         } | null;
       };
@@ -297,7 +312,10 @@ function AppointmentSetupWizard() {
           entityLabel: data.connector.entityLabel,
           timezone: savedTimezone,
           slotDurationMinutes: data.connector.slotDurationMinutes,
+          roles: data.connector.roles ?? [],
         });
+        setConfigDirty(false);
+        setConnectorExists(true);
         setEntities(data.connector.entities);
         setAvailabilityDrafts(
           Object.fromEntries(
@@ -311,10 +329,14 @@ function AppointmentSetupWizard() {
           setExpandedEntityId(data.connector.entities[0]?.id ?? null);
         }
       } else if (browserTimezone) {
+        setConnectorExists(false);
         setConfig((current) => ({
           ...current,
           timezone: browserTimezone,
         }));
+        setConfigDirty(true);
+      } else {
+        setConnectorExists(false);
       }
     } catch (loadError) {
       setError(
@@ -359,6 +381,14 @@ function AppointmentSetupWizard() {
       return false;
     }
 
+    const roles = config.roles
+      .map((role) => ({
+        id: role.id,
+        name: role.name.trim(),
+        description: role.description.trim(),
+      }))
+      .filter((role) => role.name.length > 0);
+
     setPendingAction(finalize ? "finalize" : "config");
     setError("");
     try {
@@ -372,14 +402,28 @@ function AppointmentSetupWizard() {
             entityLabel: config.entityLabel,
             timezone: config.timezone,
             slotDurationMinutes: config.slotDurationMinutes,
+            roles,
             finalize,
           }),
         },
       );
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        connector?: {
+          roles?: Array<{ id: string; name: string; description: string }>;
+        };
+      };
       if (!res.ok || !data.ok) {
         throw new Error(data.error ?? "Failed to save appointment connector");
       }
+
+      setConfig((current) => ({
+        ...current,
+        roles: data.connector?.roles ?? roles,
+      }));
+      setConfigDirty(false);
+      setConnectorExists(true);
 
       if (finalize) {
         window.location.href = `/api/setup/finish?${setupQuery(claims)}`;
@@ -405,10 +449,32 @@ function AppointmentSetupWizard() {
     }
   }
 
+  async function goToStep(next: Step) {
+    if (next === step) return;
+    setError("");
+
+    // Persist settings when leaving Settings via step nav (or if never saved).
+    if (step === "config" && next !== "config") {
+      if (configDirty || !connectorExists) {
+        const saved = await saveConfig(false);
+        if (!saved) return;
+      }
+    }
+
+    setStep(next);
+  }
+
+  function updateConfig(
+    updater: (current: ConnectorConfig) => ConnectorConfig,
+  ) {
+    setConfig((current) => updater(current));
+    setConfigDirty(true);
+  }
+
   async function handleAddEntity(input: {
     name: string;
     description: string;
-    tags: string[];
+    roleIds: string[];
   }) {
     if (!claims) {
       setError("Missing setup params. Return to Agentblit and try again.");
@@ -427,7 +493,7 @@ function AppointmentSetupWizard() {
           body: JSON.stringify({
             name: input.name,
             description: input.description || undefined,
-            tags: input.tags,
+            roleIds: input.roleIds,
           }),
         },
       );
@@ -464,7 +530,7 @@ function AppointmentSetupWizard() {
     entityId: string;
     name: string;
     description: string;
-    tags: string[];
+    roleIds: string[];
   }) {
     if (!claims) {
       setError("Missing setup params. Return to Agentblit and try again.");
@@ -483,7 +549,7 @@ function AppointmentSetupWizard() {
           body: JSON.stringify({
             name: input.name,
             description: input.description || undefined,
-            tags: input.tags,
+            roleIds: input.roleIds,
           }),
         },
       );
@@ -504,7 +570,7 @@ function AppointmentSetupWizard() {
                   ...entity,
                   name: data.entity!.name,
                   description: data.entity!.description,
-                  tags: data.entity!.tags ?? [],
+                  roleIds: data.entity!.roleIds ?? [],
                 }
               : entity,
           )
@@ -646,17 +712,18 @@ function AppointmentSetupWizard() {
     await saveConfig(true);
   }
 
-  function goToStep(next: Step) {
-    setError("");
-    setStep(next);
-  }
-
   const shellLoading = sessionPending || !isAuthenticated || loading;
 
   return (
     <SetupShell
       step={step}
-      onStepChange={shellLoading ? undefined : goToStep}
+      onStepChange={
+        shellLoading
+          ? undefined
+          : (next) => {
+              void goToStep(next);
+            }
+      }
       error={error}
       loading={shellLoading}
       email={session?.user?.email ?? undefined}
@@ -678,7 +745,7 @@ function AppointmentSetupWizard() {
               className={inputClassName}
               value={config.entityLabel}
               onChange={(event) =>
-                setConfig((current) => ({
+                updateConfig((current) => ({
                   ...current,
                   entityLabel: event.target.value,
                 }))
@@ -692,6 +759,129 @@ function AppointmentSetupWizard() {
           </div>
 
           <div>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground transition-colors hover:text-primary"
+                aria-expanded={rolesOpen}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setRolesOpen((open) => !open);
+                }}
+              >
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${
+                    rolesOpen ? "" : "-rotate-90"
+                  }`}
+                  aria-hidden="true"
+                />
+                Roles
+                <span className="font-normal text-muted-foreground">
+                  (optional)
+                </span>
+                {config.roles.length > 0 ? (
+                  <span className="ml-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                    {config.roles.length}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                className={buttonOutlineClassName + " h-8 px-3 text-xs"}
+                disabled={isBusy}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setRolesOpen(true);
+                  updateConfig((current) => ({
+                    ...current,
+                    roles: [...current.roles, { name: "", description: "" }],
+                  }));
+                }}
+              >
+                Add role
+              </button>
+            </div>
+            {rolesOpen ? (
+              config.roles.length === 0 ? (
+                <p className={hintClassName + " !mt-0"}>
+                  Optionally define valid roles (for example Cardiologist or
+                  Pediatrician). Entities can pick one or more of these later.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {config.roles.map((role, index) => (
+                    <li
+                      key={role.id ?? `new-${index}`}
+                      className="space-y-2 rounded-lg border border-border bg-muted/40 p-3"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          className={inputClassName}
+                          value={role.name}
+                          onChange={(event) => {
+                            const name = event.target.value;
+                            updateConfig((current) => ({
+                              ...current,
+                              roles: current.roles.map((item, i) =>
+                                i === index ? { ...item, name } : item,
+                              ),
+                            }));
+                          }}
+                          placeholder="Role name"
+                          aria-label={`Role ${index + 1} name`}
+                          disabled={isBusy}
+                        />
+                        <button
+                          type="button"
+                          className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={isBusy}
+                          aria-label={`Remove role ${index + 1}`}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            updateConfig((current) => ({
+                              ...current,
+                              roles: current.roles.filter((_, i) => i !== index),
+                            }));
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <textarea
+                        className={textareaClassName}
+                        value={role.description}
+                        onChange={(event) => {
+                          const description = event.target.value;
+                          updateConfig((current) => ({
+                            ...current,
+                            roles: current.roles.map((item, i) =>
+                              i === index ? { ...item, description } : item,
+                            ),
+                          }));
+                        }}
+                        placeholder="Role description (optional)"
+                        aria-label={`Role ${index + 1} description`}
+                        disabled={isBusy}
+                        rows={2}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : config.roles.length > 0 ? (
+              <p className={hintClassName + " !mt-0"}>
+                {config.roles.length} role
+                {config.roles.length === 1 ? "" : "s"} configured. Expand to
+                edit.
+              </p>
+            ) : (
+              <p className={hintClassName + " !mt-0"}>
+                Optionally define valid roles. Expand or use Add role to start.
+              </p>
+            )}
+          </div>
+
+          <div>
             <label className={labelClassName} htmlFor="timezone">
               Business timezone
             </label>
@@ -700,7 +890,7 @@ function AppointmentSetupWizard() {
               className={inputClassName}
               value={config.timezone}
               onChange={(event) =>
-                setConfig((current) => ({
+                updateConfig((current) => ({
                   ...current,
                   timezone: event.target.value,
                 }))
@@ -727,7 +917,7 @@ function AppointmentSetupWizard() {
               className={inputClassName}
               value={config.slotDurationMinutes}
               onChange={(event) =>
-                setConfig((current) => ({
+                updateConfig((current) => ({
                   ...current,
                   slotDurationMinutes: Number(event.target.value),
                 }))
@@ -758,6 +948,10 @@ function AppointmentSetupWizard() {
           <EntityManager
             entityLabel={config.entityLabel}
             entities={entities}
+            availableRoles={config.roles.filter(
+              (role): role is { id: string; name: string; description: string } =>
+                Boolean(role.id && role.name.trim()),
+            )}
             pendingAction={pendingAction}
             disabled={isBusy}
             emptyMessage={`No ${config.entityLabel.toLowerCase()}s added yet.`}
@@ -773,7 +967,7 @@ function AppointmentSetupWizard() {
               className={buttonOutlineClassName}
               onClick={(event) => {
                 event.preventDefault();
-                goToStep("config");
+                void goToStep("config");
               }}
               disabled={isBusy}
             >
@@ -784,7 +978,7 @@ function AppointmentSetupWizard() {
               className={buttonPrimaryClassName}
               onClick={(event) => {
                 event.preventDefault();
-                goToStep("availability");
+                void goToStep("availability");
               }}
               disabled={isBusy || entities.length === 0}
             >
@@ -868,7 +1062,7 @@ function AppointmentSetupWizard() {
               className={buttonOutlineClassName}
               onClick={(event) => {
                 event.preventDefault();
-                goToStep("entities");
+                void goToStep("entities");
               }}
               disabled={isBusy}
             >

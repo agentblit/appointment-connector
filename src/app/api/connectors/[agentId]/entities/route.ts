@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { createEntity, listEntities } from "@/lib/appointment/repo";
+import {
+  createEntity,
+  listEntities,
+  listRoles,
+  resolveEntityRoleIds,
+} from "@/lib/appointment/repo";
 import { appointmentEntitySchema } from "@/lib/appointment/tools";
 import {
   requireConnectorOwner,
@@ -28,10 +33,18 @@ export async function GET(request: Request, context: RouteContext) {
     );
   }
 
-  const entities = await listEntities(ownership.connector.id);
+  const [entities, roles] = await Promise.all([
+    listEntities(ownership.connector.id),
+    listRoles(ownership.connector.id),
+  ]);
   return NextResponse.json({
     ok: true,
     entityLabel: ownership.connector.entityLabel,
+    roles: roles.map((role) => ({
+      id: role.id,
+      name: role.name,
+      description: role.description,
+    })),
     entities,
   });
 }
@@ -73,12 +86,21 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  const availableRoles = await listRoles(ownership.connector.id);
+  const resolved = resolveEntityRoleIds({
+    availableRoles,
+    selectedRoleIds: bodyParse.data.roleIds,
+  });
+  if (!resolved.ok) {
+    return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+  }
+
   try {
     const entity = await createEntity({
       connectorId: ownership.connector.id,
       name: bodyParse.data.name,
       description: bodyParse.data.description,
-      tags: bodyParse.data.tags,
+      roleIds: resolved.roleIds,
     });
     return NextResponse.json({ ok: true, entity });
   } catch (error) {
