@@ -1,33 +1,30 @@
 import { NextResponse } from "next/server";
 import { validateAvailabilityRules } from "@/lib/appointment/appointment-utils";
 import {
-  getEntityForAgent,
+  ensureWorkspaceForUser,
+  getEntityForWorkspace,
   listAvailabilityRulesForEntity,
   replaceAvailabilityRulesForEntity,
 } from "@/lib/appointment/repo";
 import { appointmentAvailabilityRulesSchema } from "@/lib/appointment/tools";
-import {
-  requireConnectorOwner,
-  requireConnectorSetupAuth,
-} from "@/lib/auth/require-connector-setup-auth";
+import { requireDashboardAuth } from "@/lib/auth/require-dashboard-auth";
 
 type RouteContext = {
-  params: Promise<{ agentId: string; entityId: string }>;
+  params: Promise<{ entityId: string }>;
 };
 
 export async function GET(request: Request, context: RouteContext) {
-  const { agentId, entityId } = await context.params;
-  const auth = await requireConnectorSetupAuth(request, agentId);
+  const { entityId } = await context.params;
+  const auth = await requireDashboardAuth(request);
   if (!auth.ok) {
     return auth.response;
   }
 
-  const ownership = await requireConnectorOwner(agentId, auth.userId);
-  if (!ownership.ok) {
-    return ownership.response;
-  }
-
-  const owned = await getEntityForAgent({ agentId, entityId });
+  const workspace = await ensureWorkspaceForUser({ userId: auth.userId });
+  const owned = await getEntityForWorkspace({
+    workspaceId: workspace.id,
+    entityId,
+  });
   if (!owned) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
@@ -37,16 +34,13 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function PUT(request: Request, context: RouteContext) {
-  const { agentId, entityId } = await context.params;
-  const auth = await requireConnectorSetupAuth(request, agentId);
+  const { entityId } = await context.params;
+  const auth = await requireDashboardAuth(request);
   if (!auth.ok) {
     return auth.response;
   }
 
-  const ownership = await requireConnectorOwner(agentId, auth.userId);
-  if (!ownership.ok) {
-    return ownership.response;
-  }
+  const workspace = await ensureWorkspaceForUser({ userId: auth.userId });
 
   let json: unknown;
   try {
@@ -67,7 +61,10 @@ export async function PUT(request: Request, context: RouteContext) {
     );
   }
 
-  const owned = await getEntityForAgent({ agentId, entityId });
+  const owned = await getEntityForWorkspace({
+    workspaceId: workspace.id,
+    entityId,
+  });
   if (!owned) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }

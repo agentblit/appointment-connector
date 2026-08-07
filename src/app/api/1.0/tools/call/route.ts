@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { executeAppointmentTool } from "@/lib/appointment/exec-tools";
-import { requireAgentHeaders } from "@/lib/auth/http-connector-auth";
+import { requireWorkspaceApiKey } from "@/lib/auth/api-key-auth";
 
 const toolCallSchema = z.object({
   id: z.string().min(1),
@@ -17,14 +17,15 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  let agentId: string;
+  let workspaceId: string;
   try {
-    ({ agentId } = requireAgentHeaders(request));
+    const auth = await requireWorkspaceApiKey(request);
+    workspaceId = auth.workspace.id;
   } catch (error) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Missing agent headers",
+          error instanceof Error ? error.message : "Unauthorized",
       },
       { status: 401 },
     );
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
 
       try {
         const result = await executeAppointmentTool({
-          agentId,
+          workspaceId,
           toolName,
           args,
         });

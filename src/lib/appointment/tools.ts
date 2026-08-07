@@ -25,7 +25,7 @@ export type Tool = {
 const ask = ToolPermissionMode.NeedsApproval;
 const allow = ToolPermissionMode.AlwaysAllow;
 
-export const APPOINTMENT_CONNECTOR_KEY = "appointment";
+export const APPOINTMENT_TOOL_KEY = "appointment";
 
 export const UI_CHECK_SLOTS = "ui://appointment/check-slots";
 export const UI_APPOINTMENTS = "ui://appointment/appointments";
@@ -80,13 +80,7 @@ export const listUserAppointmentsArgsSchema = z.object({
   timezone: userTimezoneSchema.optional(),
 });
 
-export const appointmentRoleSchema = z.object({
-  id: z.string().uuid().optional(),
-  name: z.string().trim().min(1, "Role name is required").max(100),
-  description: z.string().trim().max(500).optional().default(""),
-});
-
-export const appointmentConnectorConfigSchema = z.object({
+export const appointmentWorkspaceConfigSchema = z.object({
   entityLabel: z.string().trim().min(1, "Entity label is required").max(100),
   timezone: z
     .string()
@@ -103,15 +97,11 @@ export const appointmentConnectorConfigSchema = z.object({
         ),
       "Invalid slot duration",
     ),
-  roles: z.array(appointmentRoleSchema).max(50).optional().default([]),
-  finalize: z.boolean().optional(),
 });
 
 export const appointmentEntitySchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(255),
   description: z.string().trim().max(2000).optional(),
-  /** Selected role ids from connector roles. */
-  roleIds: z.array(z.string().uuid()).max(20).optional().default([]),
 });
 
 export const appointmentAvailabilityRulesSchema = z.object({
@@ -142,7 +132,7 @@ export const APPOINTMENT_TOOLS: Tool[] = [
   {
     name: "list_entities",
     description:
-      "List all configured bookable entities (providers) for this agent, including IDs, names, descriptions, roles, and optional role assignments. ALWAYS call this first when the user asks who/what to see, which provider fits a symptom or need, or wants a recommendation. Suggest matching entities in chat and wait for the user to choose one before calling check_available_slots or book_appointment.",
+      "List all bookable entities (providers) for this agent, including IDs, names, and descriptions. ALWAYS call this first when the user asks who/what to see, which provider fits a need, or wants a recommendation. Suggest matching entities in chat and wait for the user to choose one before calling check_available_slots or book_appointment.",
     parameters: {
       type: "object",
       properties: {},

@@ -1,32 +1,25 @@
 import { NextResponse } from "next/server";
 import {
   deleteEntity,
-  getEntityForAgent,
-  listRoles,
-  resolveEntityRoleIds,
+  ensureWorkspaceForUser,
+  getEntityForWorkspace,
   updateEntity,
 } from "@/lib/appointment/repo";
 import { appointmentEntitySchema } from "@/lib/appointment/tools";
-import {
-  requireConnectorOwner,
-  requireConnectorSetupAuth,
-} from "@/lib/auth/require-connector-setup-auth";
+import { requireDashboardAuth } from "@/lib/auth/require-dashboard-auth";
 
 type RouteContext = {
-  params: Promise<{ agentId: string; entityId: string }>;
+  params: Promise<{ entityId: string }>;
 };
 
 export async function PUT(request: Request, context: RouteContext) {
-  const { agentId, entityId } = await context.params;
-  const auth = await requireConnectorSetupAuth(request, agentId);
+  const { entityId } = await context.params;
+  const auth = await requireDashboardAuth(request);
   if (!auth.ok) {
     return auth.response;
   }
 
-  const ownership = await requireConnectorOwner(agentId, auth.userId);
-  if (!ownership.ok) {
-    return ownership.response;
-  }
+  const workspace = await ensureWorkspaceForUser({ userId: auth.userId });
 
   let json: unknown;
   try {
@@ -47,18 +40,12 @@ export async function PUT(request: Request, context: RouteContext) {
     );
   }
 
-  const owned = await getEntityForAgent({ agentId, entityId });
+  const owned = await getEntityForWorkspace({
+    workspaceId: workspace.id,
+    entityId,
+  });
   if (!owned) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-  }
-
-  const availableRoles = await listRoles(owned.connector.id);
-  const resolved = resolveEntityRoleIds({
-    availableRoles,
-    selectedRoleIds: bodyParse.data.roleIds,
-  });
-  if (!resolved.ok) {
-    return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
   }
 
   try {
@@ -66,7 +53,6 @@ export async function PUT(request: Request, context: RouteContext) {
       entityId,
       name: bodyParse.data.name,
       description: bodyParse.data.description,
-      roleIds: resolved.roleIds,
     });
     return NextResponse.json({ ok: true, entity: updated });
   } catch (error) {
@@ -83,18 +69,17 @@ export async function PUT(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const { agentId, entityId } = await context.params;
-  const auth = await requireConnectorSetupAuth(request, agentId);
+  const { entityId } = await context.params;
+  const auth = await requireDashboardAuth(request);
   if (!auth.ok) {
     return auth.response;
   }
 
-  const ownership = await requireConnectorOwner(agentId, auth.userId);
-  if (!ownership.ok) {
-    return ownership.response;
-  }
-
-  const owned = await getEntityForAgent({ agentId, entityId });
+  const workspace = await ensureWorkspaceForUser({ userId: auth.userId });
+  const owned = await getEntityForWorkspace({
+    workspaceId: workspace.id,
+    entityId,
+  });
   if (!owned) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }

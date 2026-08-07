@@ -8,6 +8,7 @@ import {
   APPOINTMENTS_HTML,
   CHECK_SLOTS_HTML,
 } from "@/lib/appointment/ui-resources";
+import { requireWorkspaceApiKey } from "@/lib/auth/api-key-auth";
 
 const RESOURCES: Record<
   string,
@@ -26,10 +27,23 @@ const RESOURCES: Record<
 };
 
 /**
- * MCP Apps `resources/read` mirror for HTTP connectors.
+ * MCP Apps `resources/read` mirror for HTTP agents.
  * Agentblit calls this server-to-server; browsers never hit it directly.
+ * Requires X-API-Key.
  */
 export async function GET(req: NextRequest) {
+  try {
+    await requireWorkspaceApiKey(req);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Unauthorized",
+      },
+      { status: 401 },
+    );
+  }
+
   const uri = req.nextUrl.searchParams.get("uri")?.trim() ?? "";
   if (!uri) {
     return NextResponse.json(
@@ -62,7 +76,6 @@ export async function GET(req: NextRequest) {
           ui: {
             prefersBorder: true,
             csp: {
-              // No external network from the app; tool calls go via App Bridge.
               connectDomains: [],
               resourceDomains: [],
             },

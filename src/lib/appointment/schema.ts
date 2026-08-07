@@ -1,5 +1,4 @@
 import {
-  boolean,
   index,
   integer,
   pgSchema,
@@ -12,11 +11,11 @@ import {
 
 export const appointmentSchema = pgSchema("appointment");
 
-export const appointmentConnectors = appointmentSchema.table(
-  "connectors",
+/** One workspace per user: shared settings for all bookable entities. */
+export const appointmentWorkspaces = appointmentSchema.table(
+  "workspaces",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    agentId: varchar("agent_id", { length: 10 }).notNull().unique(),
     userId: varchar("user_id", { length: 255 }).notNull(),
     entityLabel: varchar("entity_label", { length: 100 }).notNull(),
     timezone: varchar("timezone", { length: 64 }).notNull(),
@@ -29,33 +28,25 @@ export const appointmentConnectors = appointmentSchema.table(
       .defaultNow(),
   },
   (t) => [
-    index("appointment_connectors_agent_id_idx").on(t.agentId),
-    index("appointment_connectors_user_id_idx").on(t.userId),
+    uniqueIndex("appointment_workspaces_user_id_uidx").on(t.userId),
   ],
 );
 
-export const appointmentRoles = appointmentSchema.table(
-  "roles",
+export const appointmentApiKeys = appointmentSchema.table(
+  "api_keys",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    connectorId: uuid("connector_id")
+    workspaceId: uuid("workspace_id")
       .notNull()
-      .references(() => appointmentConnectors.id, { onDelete: "cascade" }),
-    name: varchar("name", { length: 100 }).notNull(),
-    description: text("description").notNull().default(""),
+      .references(() => appointmentWorkspaces.id, { onDelete: "cascade" }),
+    apiKeyHash: varchar("api_key_hash", { length: 128 }).notNull().unique(),
+    label: varchar("label", { length: 100 }),
     createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex("appointment_roles_connector_name_uidx").on(
-      t.connectorId,
-      t.name,
-    ),
-    index("appointment_roles_connector_id_idx").on(t.connectorId),
+    index("appointment_api_keys_workspace_id_idx").on(t.workspaceId),
   ],
 );
 
@@ -63,13 +54,11 @@ export const appointmentEntities = appointmentSchema.table(
   "entities",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    connectorId: uuid("connector_id")
+    workspaceId: uuid("workspace_id")
       .notNull()
-      .references(() => appointmentConnectors.id, { onDelete: "cascade" }),
+      .references(() => appointmentWorkspaces.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
-    roleIds: uuid("role_ids").array().notNull().default([]),
-    isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -78,11 +67,11 @@ export const appointmentEntities = appointmentSchema.table(
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex("appointment_entities_connector_name_uidx").on(
-      t.connectorId,
+    uniqueIndex("appointment_entities_workspace_name_uidx").on(
+      t.workspaceId,
       t.name,
     ),
-    index("appointment_entities_connector_id_idx").on(t.connectorId),
+    index("appointment_entities_workspace_id_idx").on(t.workspaceId),
   ],
 );
 
@@ -130,8 +119,8 @@ export const appointmentAppointments = appointmentSchema.table(
   ],
 );
 
-export type AppointmentConnectorRow = typeof appointmentConnectors.$inferSelect;
-export type AppointmentRoleRow = typeof appointmentRoles.$inferSelect;
+export type AppointmentWorkspaceRow = typeof appointmentWorkspaces.$inferSelect;
+export type AppointmentApiKeyRow = typeof appointmentApiKeys.$inferSelect;
 export type AppointmentEntityRow = typeof appointmentEntities.$inferSelect;
 export type AppointmentAvailabilityRuleRow =
   typeof appointmentAvailabilityRules.$inferSelect;

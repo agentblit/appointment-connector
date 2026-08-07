@@ -1,35 +1,25 @@
 # Appointment Tool
 
-Standalone HTTP connector for Agentblit appointment booking.
+Standalone HTTP tool for Agentblit appointment booking.
 
 ## HTTP contract
 
-| Endpoint | Method |
-|----------|--------|
-| `/api/1.0/tools/list` | GET |
-| `/api/1.0/tools/call` | POST |
-| `/api/1.0/appointments` | GET |
-| `/api/1.0/connector/status` | GET |
-| `/api/1.0/connector/disconnect` | POST |
-| `/setup` | GET (config UI) |
-| `/api/health` | GET |
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| `/api/1.0/tools/list` | GET | `X-API-Key` |
+| `/api/1.0/tools/call` | POST | `X-API-Key` |
+| `/api/1.0/resources/read` | GET | `X-API-Key` |
+| `/api/1.0/appointments` | GET | `X-API-Key` |
+| `/api/health` | GET | None |
 
-Agent context header (required on status/call/disconnect/appointments):
+In the dashboard (`/`): configure settings, add multiple entities with per-entity availability, and manage **API keys**. Paste a key into AgentBlit when connecting the Appointment tool.
 
-- `X-Agentblit-Agent-Id`
+Agents call `list_entities` first, then book against a specific `entity_id`.
 
 List appointments for a booker (query params):
 
 - `email` (required)
 - `timezone` (optional IANA timezone for local time fields)
-
-Status response:
-
-```json
-{ "status": "setup_required" | "configured", "configuration_url": "https://.../setup" }
-```
-
-Setup URL includes query params: `agentId`, `connectorKey`.
 
 ## Local development
 
@@ -57,8 +47,7 @@ pnpm dev   # re-applies migrations
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | Postgres connection |
-| `AGENTBLIT_APP_URL` | Post-setup redirect base |
-| `PUBLIC_BASE_URL` | App base URL (setup `configuration_url`, Better Auth) |
+| `PUBLIC_BASE_URL` | App base URL (Better Auth) |
 | `BETTER_AUTH_SECRET` | Better Auth signing secret (required) |
 
 ## Build and push

@@ -1,18 +1,15 @@
 import {
   cancelAppointmentRecord,
   createAppointmentRecord,
-  getAppointmentForAgent,
-  getByAgentId,
-  getEntityForAgent,
+  getAppointmentForWorkspace,
+  getEntityForWorkspace,
+  getWorkspaceById,
   hasOverlappingConfirmedAppointment,
-  listAppointmentsForBookerInConnector,
+  listAppointmentsForBookerInWorkspace,
   listAppointmentsForEntityInRange,
   listAvailabilityRulesForEntity,
   listEntities,
-  listRoles,
-  mapRolesById,
   rescheduleAppointmentRecord,
-  resolveRoleSummaries,
 } from "@/lib/appointment/repo";
 import {
   formatDateInTimezone,
@@ -56,70 +53,59 @@ function withLocalTimes(
   };
 }
 
-async function assertConfiguredConnector(agentId: string) {
-  const connector = await getByAgentId(agentId);
-  if (!connector) {
-    throw new Error("Appointment connector is not configured for this agent");
+async function assertConfiguredWorkspace(workspaceId: string) {
+  const workspace = await getWorkspaceById(workspaceId);
+  if (!workspace) {
+    throw new Error("Appointment workspace is not configured");
   }
-  return connector;
+  return workspace;
 }
 
 export async function executeAppointmentTool(options: {
-  agentId: string;
+  workspaceId: string;
   toolName: string;
   args: unknown;
 }): Promise<AppointmentToolCallResult> {
-  const { agentId, toolName, args } = options;
+  const { workspaceId, toolName, args } = options;
 
   switch (toolName) {
     case "list_entities":
-      return listEntitiesTool(agentId);
+      return listEntitiesTool(workspaceId);
     case "check_available_slots":
-      return checkAvailableSlotsTool({ agentId, args });
+      return checkAvailableSlotsTool({ workspaceId, args });
     case "book_appointment":
-      return bookAppointmentTool({ agentId, args });
+      return bookAppointmentTool({ workspaceId, args });
     case "cancel_appointment":
-      return cancelAppointmentTool({ agentId, args });
+      return cancelAppointmentTool({ workspaceId, args });
     case "reschedule_appointment":
-      return rescheduleAppointmentTool({ agentId, args });
+      return rescheduleAppointmentTool({ workspaceId, args });
     case "list_user_appointments":
-      return listUserAppointmentsTool({ agentId, args });
+      return listUserAppointmentsTool({ workspaceId, args });
     default:
       throw new Error(`Unknown Appointment tool: ${toolName}`);
   }
 }
 
 async function listEntitiesTool(
-  agentId: string,
+  workspaceId: string,
 ): Promise<AppointmentToolCallResult> {
-  const connector = await assertConfiguredConnector(agentId);
-  const [entities, roles] = await Promise.all([
-    listEntities(connector.id),
-    listRoles(connector.id),
-  ]);
-  const rolesById = mapRolesById(roles);
+  const workspace = await assertConfiguredWorkspace(workspaceId);
+  const entities = await listEntities(workspace.id);
 
   return mcpStyleResult({
     ok: true,
-    entity_label: connector.entityLabel,
-    business_timezone: connector.timezone,
-    roles: roles.map((role) => ({
-      id: role.id,
-      name: role.name,
-      description: role.description,
-    })),
+    entity_label: workspace.entityLabel,
+    business_timezone: workspace.timezone,
     entities: entities.map((entity) => ({
       id: entity.id,
       name: entity.name,
       description: entity.description,
-      roles: resolveRoleSummaries(entity.roleIds, rolesById),
-      is_active: entity.isActive,
     })),
   });
 }
 
 async function checkAvailableSlotsTool(options: {
-  agentId: string;
+  workspaceId: string;
   args: unknown;
 }): Promise<AppointmentToolCallResult> {
   const parsed = checkAvailableSlotsArgsSchema.safeParse(options.args ?? {});
@@ -128,13 +114,13 @@ async function checkAvailableSlotsTool(options: {
     throw new Error(issue?.message ?? "Invalid check_available_slots arguments");
   }
 
-  const connector = await assertConfiguredConnector(options.agentId);
-  const entity = await getEntityForAgent({
-    agentId: options.agentId,
+  const workspace = await assertConfiguredWorkspace(options.workspaceId);
+  const owned = await getEntityForWorkspace({
+    workspaceId: options.workspaceId,
     entityId: parsed.data.entity_id,
   });
-  if (!entity || entity.connector.id !== connector.id) {
-    throw new Error("Entity not found for this agent");
+  if (!owned) {
+    throw new Error("Entity not found for this workspace");
   }
 
   if (parsed.data.date_from > parsed.data.date_to) {
@@ -142,7 +128,7 @@ async function checkAvailableSlotsTool(options: {
   }
 
   const userTimezone = parsed.data.timezone;
-  const businessTimezone = connector.timezone;
+  const businessTimezone = workspace.timezone;
   const { utcFrom, utcToExclusive } = userDateRangeToUtcBounds(
     parsed.data.date_from,
     parsed.data.date_to,
@@ -157,9 +143,9 @@ async function checkAvailableSlotsTool(options: {
     businessTimezone,
   );
 
-  const rules = await listAvailabilityRulesForEntity(entity.entity.id);
+  const rules = await listAvailabilityRulesForEntity(owned.entity.id);
   const appointments = await listAppointmentsForEntityInRange({
-    entityId: entity.entity.id,
+    entityId: owned.entity.id,
     dateFrom: utcFrom,
     dateTo: new Date(utcToExclusive.getTime() - 1),
   });
@@ -169,7 +155,7 @@ async function checkAvailableSlotsTool(options: {
     existingAppointments: appointments,
     dateFrom: businessDateFrom,
     dateTo: businessDateTo,
-    slotDurationMinutes: connector.slotDurationMinutes,
+    slotDurationMinutes: workspace.slotDurationMinutes,
     timezone: businessTimezone,
   });
 
@@ -186,18 +172,18 @@ async function checkAvailableSlotsTool(options: {
 
   return mcpStyleResult({
     ok: true,
-    entity_id: entity.entity.id,
-    entity_name: entity.entity.name,
-    entity_label: connector.entityLabel,
+    entity_id: owned.entity.id,
+    entity_name: owned.entity.name,
+    entity_label: workspace.entityLabel,
     business_timezone: businessTimezone,
     user_timezone: userTimezone,
-    slot_duration_minutes: connector.slotDurationMinutes,
+    slot_duration_minutes: workspace.slotDurationMinutes,
     slots,
   });
 }
 
 async function bookAppointmentTool(options: {
-  agentId: string;
+  workspaceId: string;
   args: unknown;
 }): Promise<AppointmentToolCallResult> {
   const parsed = bookAppointmentArgsSchema.safeParse(options.args ?? {});
@@ -206,13 +192,13 @@ async function bookAppointmentTool(options: {
     throw new Error(issue?.message ?? "Invalid book_appointment arguments");
   }
 
-  const connector = await assertConfiguredConnector(options.agentId);
-  const entity = await getEntityForAgent({
-    agentId: options.agentId,
+  const workspace = await assertConfiguredWorkspace(options.workspaceId);
+  const owned = await getEntityForWorkspace({
+    workspaceId: options.workspaceId,
     entityId: parsed.data.entity_id,
   });
-  if (!entity || entity.connector.id !== connector.id) {
-    throw new Error("Entity not found for this agent");
+  if (!owned) {
+    throw new Error("Entity not found for this workspace");
   }
 
   const slotStart = new Date(parsed.data.slot_start);
@@ -227,26 +213,26 @@ async function bookAppointmentTool(options: {
   const durationMinutes = Math.round(
     (slotEnd.getTime() - slotStart.getTime()) / 60_000,
   );
-  if (durationMinutes !== connector.slotDurationMinutes) {
+  if (durationMinutes !== workspace.slotDurationMinutes) {
     throw new Error(
-      `Slot duration must be ${connector.slotDurationMinutes} minutes`,
+      `Slot duration must be ${workspace.slotDurationMinutes} minutes`,
     );
   }
 
-  const rules = await listAvailabilityRulesForEntity(entity.entity.id);
+  const rules = await listAvailabilityRulesForEntity(owned.entity.id);
   if (
     !isSlotWithinAvailability({
       rules,
       slotStart,
       slotEnd,
-      timezone: connector.timezone,
+      timezone: workspace.timezone,
     })
   ) {
     throw new Error("Requested slot is outside configured availability");
   }
 
   const hasConflict = await hasOverlappingConfirmedAppointment({
-    entityId: entity.entity.id,
+    entityId: owned.entity.id,
     startTime: slotStart,
     endTime: slotEnd,
   });
@@ -255,7 +241,7 @@ async function bookAppointmentTool(options: {
   }
 
   const appointment = await createAppointmentRecord({
-    entityId: entity.entity.id,
+    entityId: owned.entity.id,
     name: parsed.data.name,
     email: parsed.data.email,
     startTime: slotStart,
@@ -271,9 +257,9 @@ async function bookAppointmentTool(options: {
   return mcpStyleResult({
     ok: true,
     appointment_id: appointment.id,
-    entity_id: entity.entity.id,
-    entity_name: entity.entity.name,
-    business_timezone: connector.timezone,
+    entity_id: owned.entity.id,
+    entity_name: owned.entity.name,
+    business_timezone: workspace.timezone,
     user_timezone: parsed.data.timezone,
     start_time: local.start,
     end_time: local.end,
@@ -286,7 +272,7 @@ async function bookAppointmentTool(options: {
 }
 
 async function cancelAppointmentTool(options: {
-  agentId: string;
+  workspaceId: string;
   args: unknown;
 }): Promise<AppointmentToolCallResult> {
   const parsed = cancelAppointmentArgsSchema.safeParse(options.args ?? {});
@@ -295,12 +281,12 @@ async function cancelAppointmentTool(options: {
     throw new Error(issue?.message ?? "Invalid cancel_appointment arguments");
   }
 
-  const appointment = await getAppointmentForAgent({
-    agentId: options.agentId,
+  const appointment = await getAppointmentForWorkspace({
+    workspaceId: options.workspaceId,
     appointmentId: parsed.data.appointment_id,
   });
   if (!appointment) {
-    throw new Error("Appointment not found for this agent");
+    throw new Error("Appointment not found for this workspace");
   }
   if (appointment.appointment.status === "cancelled") {
     throw new Error("Appointment is already cancelled");
@@ -315,7 +301,7 @@ async function cancelAppointmentTool(options: {
     ok: true,
     appointment_id: updated.id,
     status: updated.status,
-    business_timezone: appointment.connector.timezone,
+    business_timezone: appointment.workspace.timezone,
     start_time: updated.startTime.toISOString(),
     end_time: updated.endTime.toISOString(),
   };
@@ -334,7 +320,7 @@ async function cancelAppointmentTool(options: {
 }
 
 async function rescheduleAppointmentTool(options: {
-  agentId: string;
+  workspaceId: string;
   args: unknown;
 }): Promise<AppointmentToolCallResult> {
   const parsed = rescheduleAppointmentArgsSchema.safeParse(options.args ?? {});
@@ -345,18 +331,18 @@ async function rescheduleAppointmentTool(options: {
     );
   }
 
-  const appointment = await getAppointmentForAgent({
-    agentId: options.agentId,
+  const appointment = await getAppointmentForWorkspace({
+    workspaceId: options.workspaceId,
     appointmentId: parsed.data.appointment_id,
   });
   if (!appointment) {
-    throw new Error("Appointment not found for this agent");
+    throw new Error("Appointment not found for this workspace");
   }
   if (appointment.appointment.status !== "confirmed") {
     throw new Error("Only confirmed appointments can be rescheduled");
   }
 
-  const connector = appointment.connector;
+  const workspace = appointment.workspace;
   const slotStart = new Date(parsed.data.new_slot_start);
   const slotEnd = new Date(parsed.data.new_slot_end);
   if (Number.isNaN(slotStart.getTime()) || Number.isNaN(slotEnd.getTime())) {
@@ -369,9 +355,9 @@ async function rescheduleAppointmentTool(options: {
   const durationMinutes = Math.round(
     (slotEnd.getTime() - slotStart.getTime()) / 60_000,
   );
-  if (durationMinutes !== connector.slotDurationMinutes) {
+  if (durationMinutes !== workspace.slotDurationMinutes) {
     throw new Error(
-      `Slot duration must be ${connector.slotDurationMinutes} minutes`,
+      `Slot duration must be ${workspace.slotDurationMinutes} minutes`,
     );
   }
 
@@ -381,7 +367,7 @@ async function rescheduleAppointmentTool(options: {
       rules,
       slotStart,
       slotEnd,
-      timezone: connector.timezone,
+      timezone: workspace.timezone,
     })
   ) {
     throw new Error("Requested slot is outside configured availability");
@@ -416,7 +402,7 @@ async function rescheduleAppointmentTool(options: {
     ok: true,
     appointment_id: updated.id,
     entity_id: appointment.entity.id,
-    business_timezone: connector.timezone,
+    business_timezone: workspace.timezone,
     user_timezone: parsed.data.timezone,
     start_time: local.start,
     end_time: local.end,
@@ -427,7 +413,7 @@ async function rescheduleAppointmentTool(options: {
 }
 
 async function listUserAppointmentsTool(options: {
-  agentId: string;
+  workspaceId: string;
   args: unknown;
 }): Promise<AppointmentToolCallResult> {
   const parsed = listUserAppointmentsArgsSchema.safeParse(options.args ?? {});
@@ -438,9 +424,9 @@ async function listUserAppointmentsTool(options: {
     );
   }
 
-  const connector = await assertConfiguredConnector(options.agentId);
-  const rows = await listAppointmentsForBookerInConnector({
-    connectorId: connector.id,
+  const workspace = await assertConfiguredWorkspace(options.workspaceId);
+  const rows = await listAppointmentsForBookerInWorkspace({
+    workspaceId: workspace.id,
     email: parsed.data.email,
   });
 
@@ -470,7 +456,7 @@ async function listUserAppointmentsTool(options: {
   const result: Record<string, unknown> = {
     ok: true,
     email: parsed.data.email.trim().toLowerCase(),
-    business_timezone: connector.timezone,
+    business_timezone: workspace.timezone,
     count: appointments.length,
     appointments,
   };

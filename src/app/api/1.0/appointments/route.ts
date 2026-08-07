@@ -1,27 +1,26 @@
 import { NextResponse } from "next/server";
 import { formatDateTimeInTimezone } from "@/lib/appointment/appointment-utils";
-import {
-  getByAgentId,
-  listAppointmentsForBookerInConnector,
-} from "@/lib/appointment/repo";
+import { listAppointmentsForBookerInWorkspace } from "@/lib/appointment/repo";
 import { listUserAppointmentsArgsSchema } from "@/lib/appointment/tools";
-import { requireAgentHeaders } from "@/lib/auth/http-connector-auth";
+import { requireWorkspaceApiKey } from "@/lib/auth/api-key-auth";
 
 /**
  * GET /api/1.0/appointments?email=...&timezone=...
  *
- * Lists appointments for a booker (matched by email) on this agent.
- * Requires X-Agentblit-Agent-Id.
+ * Lists appointments for a booker (matched by email) on this workspace.
+ * Requires X-API-Key.
  */
 export async function GET(request: Request) {
-  let agentId: string;
+  let workspace: Awaited<
+    ReturnType<typeof requireWorkspaceApiKey>
+  >["workspace"];
   try {
-    ({ agentId } = requireAgentHeaders(request));
+    ({ workspace } = await requireWorkspaceApiKey(request));
   } catch (error) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Missing agent headers",
+          error instanceof Error ? error.message : "Unauthorized",
       },
       { status: 401 },
     );
@@ -40,17 +39,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const connector = await getByAgentId(agentId);
-  if (!connector) {
-    return NextResponse.json(
-      { error: "Appointment connector is not configured for this agent" },
-      { status: 404 },
-    );
-  }
-
   const email = parsed.data.email.trim().toLowerCase();
-  const rows = await listAppointmentsForBookerInConnector({
-    connectorId: connector.id,
+  const rows = await listAppointmentsForBookerInWorkspace({
+    workspaceId: workspace.id,
     email,
   });
 
@@ -81,7 +72,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     email,
-    business_timezone: connector.timezone,
+    business_timezone: workspace.timezone,
     count: appointments.length,
     appointments,
     ...(parsed.data.timezone
