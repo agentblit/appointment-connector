@@ -1,5 +1,5 @@
 /**
- * MCP Apps HTML resources for the appointment tool.
+ * MCP Apps HTML resources for the appointment connector.
  * Served via GET /api/1.0/resources/read?uri=ui://…
  */
 

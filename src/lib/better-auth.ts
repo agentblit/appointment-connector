@@ -21,7 +21,7 @@ export const auth = betterAuth({
   },
   // Avoid colliding with default `better-auth.*` cookies on localhost.
   advanced: {
-    cookiePrefix: "appointment-tool",
+    cookiePrefix: "appointment-connector",
   },
   databaseHooks: {
     user: {

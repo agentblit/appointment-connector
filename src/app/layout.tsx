@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Appointment Tool",
-  description: "Agentblit appointment booking tool",
+  title: "Appointment Connector",
+  description: "Agentblit appointment booking connector",
 };
 
 export default function RootLayout({

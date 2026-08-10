@@ -1,6 +1,6 @@
-# Appointment Tool
+# Appointment Connector
 
-Standalone HTTP tool for Agentblit appointment booking.
+Standalone HTTP connector for Agentblit appointment booking.
 
 ## HTTP contract
 
@@ -12,7 +12,7 @@ Standalone HTTP tool for Agentblit appointment booking.
 | `/api/1.0/appointments` | GET | `X-API-Key` |
 | `/api/health` | GET | None |
 
-In the dashboard (`/`): configure settings, add multiple entities with per-entity availability, and manage **API keys**. Paste a key into AgentBlit when connecting the Appointment tool.
+In the dashboard (`/`): configure settings, add multiple entities with per-entity availability, and manage **API keys**. Paste a key into AgentBlit when connecting the Appointment connector.
 
 Agents call `list_entities` first, then book against a specific `entity_id`.
 
@@ -53,6 +53,30 @@ pnpm dev   # re-applies migrations
 ## Build and push
 
 ```bash
-docker build --platform linux/amd64 -t registry.agentblit.com/appointment-tool:latest .
-docker push registry.agentblit.com/appointment-tool:latest
+docker build --platform linux/amd64 -t registry.agentblit.com/appointment-connector:latest .
+docker push registry.agentblit.com/appointment-connector:latest
 ```
+
+## Production deploy
+
+Manifests live in `infra/prod/internal/tools/`.
+
+```bash
+# 1. Secrets (once)
+cp infra/prod/internal/tools/appointment-connector-secret.example.yaml \
+   infra/prod/internal/tools/appointment-connector-secret.yaml
+# fill BETTER_AUTH_SECRET, POSTGRES_PASSWORD, DATABASE_URL
+
+kubectl apply -f infra/prod/internal/tools/appointment-connector-secret.yaml
+kubectl apply -f infra/prod/internal/tools/appointment-connector.yaml
+
+# 2. Image
+cd appointment-connector
+docker build --platform linux/amd64 -t registry.agentblit.com/appointment-connector:latest .
+docker push registry.agentblit.com/appointment-connector:latest
+kubectl rollout restart deployment/appointment-connector -n internal
+kubectl rollout status deployment/appointment-connector -n internal
+```
+
+Public URL: `https://appointment-connector.agentblit.com`  
+Health: `https://appointment-connector.agentblit.com/api/health`
