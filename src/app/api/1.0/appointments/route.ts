@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { formatDateTimeInTimezone } from "@/lib/appointment/appointment-utils";
+import { appointmentMeetingDetails } from "@/lib/appointment/meeting";
 import { listAppointmentsForBookerInWorkspace } from "@/lib/appointment/repo";
 import { listUserAppointmentsArgsSchema } from "@/lib/appointment/tools";
 import { requireWorkspaceApiKey } from "@/lib/auth/api-key-auth";
@@ -55,6 +56,8 @@ export async function GET(request: Request) {
       status: appointment.status,
       start_time: appointment.startTime.toISOString(),
       end_time: appointment.endTime.toISOString(),
+      meeting_mode: entity.meetingMode,
+      ...appointmentMeetingDetails(appointment),
     };
     if (parsed.data.timezone) {
       item.start_local = formatDateTimeInTimezone(

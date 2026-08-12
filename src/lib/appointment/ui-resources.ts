@@ -416,11 +416,28 @@ export const CHECK_SLOTS_HTML = wrapHtml(
       var sub = document.getElementById("entity-subtitle");
       if (state.entityName) {
         title.textContent = state.entityName;
-        sub.textContent = "Choose a time";
+        sub.textContent = state.slots.length ? "Choose a time" : "";
       } else {
         title.textContent = "Available times";
         sub.textContent = "";
       }
+    }
+
+    function hidePickerUi() {
+      var wrap = document.querySelector(".wrap");
+      if (wrap) {
+        wrap.style.display = "none";
+        wrap.innerHTML = "";
+      }
+      requestAnimationFrame(function () {
+        window.McpAppBridge.notifySize && window.McpAppBridge.notifySize();
+        // Host may collapse/dismiss the card when height is 0.
+        window.parent.postMessage({
+          jsonrpc: "2.0",
+          method: "ui/notifications/size-changed",
+          params: { height: 0 }
+        }, "*");
+      });
     }
 
     function render() {
@@ -433,8 +450,23 @@ export const CHECK_SLOTS_HTML = wrapHtml(
       tabs.innerHTML = "";
       updateEntityHeader();
       if (!state.slots.length) {
-        subtitle.textContent = "No times available";
-        form.style.display = "none";
+        // No slots to pick — don't leave a useless "Choose a time" card open.
+        hidePickerUi();
+        var emptyEntity = state.entityName || "this provider";
+        window.McpAppBridge.updateModelContext({
+          content: [{
+            type: "text",
+            text: "No available appointment times for " + emptyEntity +
+              " in the requested date range."
+          }],
+          structuredContent: {
+            uiComplete: true,
+            action: "no_slots_available",
+            entity_id: state.entityId || state.args.entity_id || null,
+            entity_name: state.entityName || null,
+            slots: []
+          }
+        }).catch(function () {});
         return;
       }
 
@@ -540,7 +572,11 @@ export const CHECK_SLOTS_HTML = wrapHtml(
             slot_end: slot.end,
             timezone: state.timezone || state.args.timezone,
             name: name,
-            email: email
+            email: email,
+            meeting_mode: booking.meeting_mode || null,
+            meeting_url: booking.meeting_url || null,
+            location_address: booking.location_address || null,
+            location_maps_url: booking.location_maps_url || null
           }
         }).catch(function () {
           // Booking already succeeded; context synchronization is best-effort.

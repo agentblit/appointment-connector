@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { isValidIanaTimezone } from "@/lib/appointment/appointment-utils";
+import { isGoogleOAuthConfigured } from "@/lib/appointment/meeting/google";
 import {
   ensureWorkspaceForUser,
+  getGoogleIntegrationForEntity,
   getWorkspaceWithEntities,
   listApiKeys,
   updateWorkspace,
@@ -33,24 +35,43 @@ export async function GET(request: Request) {
 
   const apiKeys = await listApiKeys(workspace.id);
 
-  return NextResponse.json({
-    ok: true,
-    workspace: {
-      id: full.id,
-      entityLabel: full.entityLabel,
-      timezone: full.timezone,
-      slotDurationMinutes: full.slotDurationMinutes,
-      entities: full.entities.map((entity) => ({
+  const entities = await Promise.all(
+    full.entities.map(async (entity) => {
+      const google = await getGoogleIntegrationForEntity(entity.id);
+      return {
         id: entity.id,
         name: entity.name,
         description: entity.description,
+        roleIds: entity.roleIds ?? [],
+        meetingMode: entity.meetingMode,
+        locationAddress: entity.locationAddress,
+        locationMapsUrl: entity.locationMapsUrl,
+        googleConnected: google.connected,
+        googleAccountEmail: google.connected ? google.accountEmail : null,
         availabilityRules: entity.availabilityRules.map((rule) => ({
           id: rule.id,
           dayOfWeek: rule.dayOfWeek,
           startTime: rule.startTime,
           endTime: rule.endTime,
         })),
+      };
+    }),
+  );
+
+  return NextResponse.json({
+    ok: true,
+    googleOAuthConfigured: isGoogleOAuthConfigured(),
+    workspace: {
+      id: full.id,
+      entityLabel: full.entityLabel,
+      timezone: full.timezone,
+      slotDurationMinutes: full.slotDurationMinutes,
+      roles: full.roles.map((role) => ({
+        id: role.id,
+        name: role.name,
+        description: role.description,
       })),
+      entities,
       apiKeys: apiKeys.map((key) => ({
         id: key.id,
         label: key.label,
@@ -60,7 +81,7 @@ export async function GET(request: Request) {
   });
 }
 
-/** Update workspace settings (entity label, timezone, slot duration). */
+/** Update workspace settings (entity label, timezone, slot duration, roles). */
 export async function PUT(request: Request) {
   const auth = await requireDashboardAuth(request);
   if (!auth.ok) {
@@ -95,6 +116,7 @@ export async function PUT(request: Request) {
     entityLabel: body.entityLabel,
     timezone: body.timezone,
     slotDurationMinutes: body.slotDurationMinutes,
+    roles: body.roles,
   });
   if (!updated) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
@@ -103,10 +125,15 @@ export async function PUT(request: Request) {
   return NextResponse.json({
     ok: true,
     workspace: {
-      id: updated.id,
-      entityLabel: updated.entityLabel,
-      timezone: updated.timezone,
-      slotDurationMinutes: updated.slotDurationMinutes,
+      id: updated.workspace.id,
+      entityLabel: updated.workspace.entityLabel,
+      timezone: updated.workspace.timezone,
+      slotDurationMinutes: updated.workspace.slotDurationMinutes,
+      roles: updated.roles.map((role) => ({
+        id: role.id,
+        name: role.name,
+        description: role.description,
+      })),
     },
   });
 }

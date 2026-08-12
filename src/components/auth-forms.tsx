@@ -19,7 +19,7 @@ function resolveAfterAuth(nextPath: string | null | undefined): string {
   if (nextPath?.startsWith("/")) {
     return nextPath;
   }
-  return "/";
+  return "/entities";
 }
 
 const inputClassName =

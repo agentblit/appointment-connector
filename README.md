@@ -49,6 +49,24 @@ pnpm dev   # re-applies migrations
 | `DATABASE_URL` | Postgres connection |
 | `PUBLIC_BASE_URL` | App base URL (Better Auth) |
 | `BETTER_AUTH_SECRET` | Better Auth signing secret (required) |
+| `GOOGLE_CLIENT_ID` | Google OAuth client id (Calendar + Meet) |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+
+### Google Meet (online entities)
+
+Each online entity connects its own Google account from the dashboard. On booking, the connector creates a Google Calendar event with a Meet link on that entity's calendar.
+
+1. Create a Google Cloud OAuth client (Web application).
+2. Enable the Google Calendar API.
+3. Add this exact redirect URI in Google Cloud Console (Authorized redirect URIs):
+
+   `{PUBLIC_BASE_URL}/api/workspace/integrations/google/callback`
+
+   Example for local: `http://localhost:3080/api/workspace/integrations/google/callback`
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+5. Edit an entity → connect Google → switch meeting mode to **Online**.
+
+Offline entities store an address and/or Google Maps URL instead; no Google connection is required.
 
 ## Build and push
 

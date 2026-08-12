@@ -3,8 +3,10 @@ import {
   asc,
   desc,
   eq,
+  gt,
   gte,
   inArray,
+  lt,
   lte,
   ne,
 } from "drizzle-orm";
@@ -14,12 +16,17 @@ import {
   appointmentAppointments,
   appointmentAvailabilityRules,
   appointmentEntities,
+  appointmentOauthConnections,
+  appointmentRoles,
   appointmentWorkspaces,
   type AppointmentAvailabilityRuleRow,
   type AppointmentEntityRow,
+  type AppointmentOauthConnectionRow,
+  type AppointmentRoleRow,
   type AppointmentRow,
   type AppointmentWorkspaceRow,
 } from "@/lib/appointment/schema";
+import { APPOINTMENT_OAUTH_PROVIDER_GOOGLE } from "@/lib/appointment/constants";
 import { hashApiKey } from "@/lib/auth/api-key-auth";
 import { db } from "@/lib/db/client";
 
@@ -28,6 +35,7 @@ export type AppointmentEntityWithAvailability = AppointmentEntityRow & {
 };
 
 export type AppointmentWorkspaceWithEntities = AppointmentWorkspaceRow & {
+  roles: AppointmentRoleRow[];
   entities: AppointmentEntityWithAvailability[];
 };
 
@@ -76,7 +84,11 @@ export async function updateWorkspace(options: {
   entityLabel: string;
   timezone: string;
   slotDurationMinutes: number;
-}): Promise<AppointmentWorkspaceRow | null> {
+  roles?: Array<{ id?: string; name: string; description?: string }> | null;
+}): Promise<{
+  workspace: AppointmentWorkspaceRow;
+  roles: AppointmentRoleRow[];
+} | null> {
   const updated = await db
     .update(appointmentWorkspaces)
     .set({
@@ -92,7 +104,175 @@ export async function updateWorkspace(options: {
       ),
     )
     .returning();
-  return updated[0] ?? null;
+  const workspace = updated[0];
+  if (!workspace) return null;
+
+  const roles = await syncWorkspaceRoles({
+    workspaceId: workspace.id,
+    roles: options.roles,
+  });
+
+  return { workspace, roles };
+}
+
+export async function listRoles(workspaceId: string) {
+  return db
+    .select()
+    .from(appointmentRoles)
+    .where(eq(appointmentRoles.workspaceId, workspaceId))
+    .orderBy(asc(appointmentRoles.name));
+}
+
+function normalizeRoleInputs(
+  roles?: Array<{ id?: string; name: string; description?: string }> | null,
+) {
+  if (!roles?.length) return [];
+  const seen = new Set<string>();
+  const normalized: Array<{ id?: string; name: string; description: string }> =
+    [];
+  for (const role of roles) {
+    const name = role.name.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({
+      id: role.id?.trim() || undefined,
+      name,
+      description: role.description?.trim() ?? "",
+    });
+  }
+  return normalized;
+}
+
+async function syncWorkspaceRoles(options: {
+  workspaceId: string;
+  roles?: Array<{ id?: string; name: string; description?: string }> | null;
+}): Promise<AppointmentRoleRow[]> {
+  const desired = normalizeRoleInputs(options.roles);
+  const existing = await listRoles(options.workspaceId);
+  const existingById = new Map(existing.map((role) => [role.id, role]));
+
+  const keptIds = new Set<string>();
+
+  for (const role of desired) {
+    if (role.id && existingById.has(role.id)) {
+      const current = existingById.get(role.id)!;
+      if (
+        current.name !== role.name ||
+        current.description !== role.description
+      ) {
+        await db
+          .update(appointmentRoles)
+          .set({
+            name: role.name,
+            description: role.description,
+            updatedAt: new Date(),
+          })
+          .where(eq(appointmentRoles.id, role.id));
+      }
+      keptIds.add(role.id);
+      continue;
+    }
+
+    const inserted = await db
+      .insert(appointmentRoles)
+      .values({
+        workspaceId: options.workspaceId,
+        name: role.name,
+        description: role.description,
+        updatedAt: new Date(),
+      })
+      .returning();
+    keptIds.add(inserted[0].id);
+  }
+
+  const removedIds = existing
+    .map((role) => role.id)
+    .filter((id) => !keptIds.has(id));
+
+  if (removedIds.length > 0) {
+    await db
+      .delete(appointmentRoles)
+      .where(inArray(appointmentRoles.id, removedIds));
+
+    const entities = await listEntities(options.workspaceId);
+    for (const entity of entities) {
+      const nextIds = (entity.roleIds ?? []).filter(
+        (id) => !removedIds.includes(id),
+      );
+      if (nextIds.length !== (entity.roleIds ?? []).length) {
+        await db
+          .update(appointmentEntities)
+          .set({ roleIds: nextIds, updatedAt: new Date() })
+          .where(eq(appointmentEntities.id, entity.id));
+      }
+    }
+  }
+
+  return listRoles(options.workspaceId);
+}
+
+function normalizeRoleIds(roleIds?: string[] | null) {
+  if (!roleIds?.length) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const roleId of roleIds) {
+    const value = roleId.trim();
+    if (!value) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+/** Ensure selected entity role ids belong to the workspace's roles. */
+export function resolveEntityRoleIds(options: {
+  availableRoles: Array<{ id: string }> | null | undefined;
+  selectedRoleIds?: string[] | null;
+}): { ok: true; roleIds: string[] } | { ok: false; error: string } {
+  const selected = normalizeRoleIds(options.selectedRoleIds);
+  const available = options.availableRoles ?? [];
+  const availableIds = new Set(available.map((role) => role.id));
+
+  if (selected.length === 0) {
+    return { ok: true, roleIds: [] };
+  }
+
+  if (available.length === 0) {
+    return {
+      ok: false,
+      error:
+        "No roles are configured; leave roles unset or add roles in settings",
+    };
+  }
+
+  for (const roleId of selected) {
+    if (!availableIds.has(roleId)) {
+      return { ok: false, error: `Unknown role id "${roleId}"` };
+    }
+  }
+
+  return { ok: true, roleIds: selected };
+}
+
+export function mapRolesById(roles: AppointmentRoleRow[]) {
+  return new Map(roles.map((role) => [role.id, role]));
+}
+
+export function resolveRoleSummaries(
+  roleIds: string[] | null | undefined,
+  rolesById: Map<string, AppointmentRoleRow>,
+) {
+  return (roleIds ?? [])
+    .map((id) => rolesById.get(id))
+    .filter((role): role is AppointmentRoleRow => Boolean(role))
+    .map((role) => ({
+      id: role.id,
+      name: role.name,
+      description: role.description,
+    }));
 }
 
 export async function createApiKey(options: {
@@ -184,6 +364,10 @@ export async function createEntity(options: {
   workspaceId: string;
   name: string;
   description?: string | null;
+  roleIds?: string[] | null;
+  meetingMode?: string;
+  locationAddress?: string | null;
+  locationMapsUrl?: string | null;
 }) {
   const inserted = await db
     .insert(appointmentEntities)
@@ -191,6 +375,10 @@ export async function createEntity(options: {
       workspaceId: options.workspaceId,
       name: options.name.trim(),
       description: options.description?.trim() || null,
+      roleIds: normalizeRoleIds(options.roleIds),
+      meetingMode: options.meetingMode ?? "offline",
+      locationAddress: options.locationAddress?.trim() || null,
+      locationMapsUrl: options.locationMapsUrl?.trim() || null,
       updatedAt: new Date(),
     })
     .returning();
@@ -201,12 +389,26 @@ export async function updateEntity(options: {
   entityId: string;
   name: string;
   description?: string | null;
+  roleIds?: string[] | null;
+  meetingMode?: string;
+  locationAddress?: string | null;
+  locationMapsUrl?: string | null;
 }) {
   const updated = await db
     .update(appointmentEntities)
     .set({
       name: options.name.trim(),
       description: options.description?.trim() || null,
+      roleIds: normalizeRoleIds(options.roleIds),
+      ...(options.meetingMode !== undefined
+        ? { meetingMode: options.meetingMode }
+        : {}),
+      ...(options.locationAddress !== undefined
+        ? { locationAddress: options.locationAddress?.trim() || null }
+        : {}),
+      ...(options.locationMapsUrl !== undefined
+        ? { locationMapsUrl: options.locationMapsUrl?.trim() || null }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(appointmentEntities.id, options.entityId))
@@ -364,11 +566,13 @@ export async function hasOverlappingConfirmedAppointment(options: {
   endTime: Date;
   excludeAppointmentId?: string;
 }) {
+  // Half-open intervals [start, end): adjacent slots (e.g. 09:00–09:30 and
+  // 09:30–10:00) must not count as overlapping — match generateAvailableSlots.
   const conditions = [
     eq(appointmentAppointments.entityId, options.entityId),
     eq(appointmentAppointments.status, "confirmed"),
-    lte(appointmentAppointments.startTime, options.endTime),
-    gte(appointmentAppointments.endTime, options.startTime),
+    lt(appointmentAppointments.startTime, options.endTime),
+    gt(appointmentAppointments.endTime, options.startTime),
   ];
 
   if (options.excludeAppointmentId) {
@@ -392,6 +596,10 @@ export async function createAppointmentRecord(options: {
   startTime: Date;
   endTime: Date;
   userId?: string;
+  meetingUrl?: string | null;
+  externalMeetingId?: string | null;
+  locationAddress?: string | null;
+  locationMapsUrl?: string | null;
 }): Promise<AppointmentRow> {
   const inserted = await db
     .insert(appointmentAppointments)
@@ -403,6 +611,10 @@ export async function createAppointmentRecord(options: {
       startTime: options.startTime,
       endTime: options.endTime,
       status: "confirmed",
+      meetingUrl: options.meetingUrl?.trim() || null,
+      externalMeetingId: options.externalMeetingId?.trim() || null,
+      locationAddress: options.locationAddress?.trim() || null,
+      locationMapsUrl: options.locationMapsUrl?.trim() || null,
       updatedAt: new Date(),
     })
     .returning();
@@ -444,10 +656,15 @@ export async function getWorkspaceWithEntities(workspaceId: string) {
     return null;
   }
 
-  const entities = await listEntities(workspace.id);
+  const [entities, roles] = await Promise.all([
+    listEntities(workspace.id),
+    listRoles(workspace.id),
+  ]);
+
   if (entities.length === 0) {
     return {
       ...workspace,
+      roles,
       entities: [],
     } satisfies AppointmentWorkspaceWithEntities;
   }
@@ -472,9 +689,111 @@ export async function getWorkspaceWithEntities(workspaceId: string) {
 
   return {
     ...workspace,
+    roles,
     entities: entities.map((entity) => ({
       ...entity,
       availabilityRules: rulesByEntity.get(entity.id) ?? [],
     })),
   } satisfies AppointmentWorkspaceWithEntities;
+}
+
+export async function getOauthConnectionForEntity(options: {
+  entityId: string;
+  provider: string;
+}): Promise<AppointmentOauthConnectionRow | null> {
+  const rows = await db
+    .select()
+    .from(appointmentOauthConnections)
+    .where(
+      and(
+        eq(appointmentOauthConnections.entityId, options.entityId),
+        eq(appointmentOauthConnections.provider, options.provider),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upsertOauthConnection(options: {
+  entityId: string;
+  provider: string;
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresAt?: Date | null;
+  scope?: string | null;
+  accountEmail?: string | null;
+}) {
+  const existing = await getOauthConnectionForEntity({
+    entityId: options.entityId,
+    provider: options.provider,
+  });
+
+  if (existing) {
+    const updated = await db
+      .update(appointmentOauthConnections)
+      .set({
+        accessToken: options.accessToken,
+        refreshToken: options.refreshToken ?? existing.refreshToken,
+        expiresAt: options.expiresAt ?? null,
+        scope: options.scope ?? existing.scope,
+        accountEmail: options.accountEmail ?? existing.accountEmail,
+        updatedAt: new Date(),
+      })
+      .where(eq(appointmentOauthConnections.id, existing.id))
+      .returning();
+    return updated[0];
+  }
+
+  const inserted = await db
+    .insert(appointmentOauthConnections)
+    .values({
+      entityId: options.entityId,
+      provider: options.provider,
+      accessToken: options.accessToken,
+      refreshToken: options.refreshToken ?? null,
+      expiresAt: options.expiresAt ?? null,
+      scope: options.scope ?? null,
+      accountEmail: options.accountEmail ?? null,
+      updatedAt: new Date(),
+    })
+    .returning();
+  return inserted[0];
+}
+
+export async function deleteOauthConnectionForEntity(options: {
+  entityId: string;
+  provider: string;
+}) {
+  const deleted = await db
+    .delete(appointmentOauthConnections)
+    .where(
+      and(
+        eq(appointmentOauthConnections.entityId, options.entityId),
+        eq(appointmentOauthConnections.provider, options.provider),
+      ),
+    )
+    .returning({ id: appointmentOauthConnections.id });
+  return deleted[0] ?? null;
+}
+
+export async function hasGoogleConnectionForEntity(entityId: string) {
+  const connection = await getOauthConnectionForEntity({
+    entityId,
+    provider: APPOINTMENT_OAUTH_PROVIDER_GOOGLE,
+  });
+  return Boolean(connection);
+}
+
+export async function getGoogleIntegrationForEntity(entityId: string) {
+  const connection = await getOauthConnectionForEntity({
+    entityId,
+    provider: APPOINTMENT_OAUTH_PROVIDER_GOOGLE,
+  });
+  if (!connection) {
+    return { connected: false as const };
+  }
+  return {
+    connected: true as const,
+    accountEmail: connection.accountEmail,
+  };
 }

@@ -80,6 +80,12 @@ export const listUserAppointmentsArgsSchema = z.object({
   timezone: userTimezoneSchema.optional(),
 });
 
+export const appointmentRoleSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1, "Role name is required").max(100),
+  description: z.string().trim().max(500).optional().default(""),
+});
+
 export const appointmentWorkspaceConfigSchema = z.object({
   entityLabel: z.string().trim().min(1, "Entity label is required").max(100),
   timezone: z
@@ -97,12 +103,43 @@ export const appointmentWorkspaceConfigSchema = z.object({
         ),
       "Invalid slot duration",
     ),
+  roles: z.array(appointmentRoleSchema).max(50).optional().default([]),
 });
 
 export const appointmentEntitySchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(255),
   description: z.string().trim().max(2000).optional(),
+  /** Selected role ids from workspace roles. */
+  roleIds: z.array(z.string().uuid()).max(20).optional().default([]),
+  meetingMode: z.enum(["online", "offline"]).default("offline"),
+  locationAddress: z.string().trim().max(2000).optional(),
+  locationMapsUrl: z
+    .union([z.string().trim().url("Maps URL must be a valid URL"), z.literal("")])
+    .optional(),
 });
+
+export const appointmentEntityMeetingSchema = z
+  .object({
+    meetingMode: z.enum(["online", "offline"]),
+    locationAddress: z.string().trim().max(2000).optional(),
+    locationMapsUrl: z
+      .union([z.string().trim().url("Maps URL must be a valid URL"), z.literal("")])
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.meetingMode === "offline") {
+      const hasAddress = Boolean(data.locationAddress?.trim());
+      const hasMaps = Boolean(data.locationMapsUrl?.trim());
+      if (!hasAddress && !hasMaps) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "Offline entities require an address and/or Google Maps URL",
+          path: ["locationAddress"],
+        });
+      }
+    }
+  });
 
 export const appointmentAvailabilityRulesSchema = z.object({
   rules: z
@@ -132,7 +169,7 @@ export const APPOINTMENT_TOOLS: Tool[] = [
   {
     name: "list_entities",
     description:
-      "List all bookable entities (providers) for this agent, including IDs, names, and descriptions. ALWAYS call this first when the user asks who/what to see, which provider fits a need, or wants a recommendation. Suggest matching entities in chat and wait for the user to choose one before calling check_available_slots or book_appointment.",
+      "List all bookable entities (providers) for this agent, including IDs, names, descriptions, roles, and optional role assignments. ALWAYS call this first when the user asks who/what to see, which provider fits a need, or wants a recommendation. Suggest matching entities in chat and wait for the user to choose one before calling check_available_slots or book_appointment.",
     parameters: {
       type: "object",
       properties: {},
@@ -142,7 +179,7 @@ export const APPOINTMENT_TOOLS: Tool[] = [
   {
     name: "check_available_slots",
     description:
-      "Show available appointment times for one specific entity the user already chose. Only call after list_entities (or a clear prior choice) and the user has confirmed which entity to book—do not jump straight here for 'who should I see?' questions. Pass the chat user's IANA timezone so date_from/date_to and returned local times match that user.",
+      "Show available appointment times for one specific entity the user already chose. Only call after list_entities (or a clear prior choice) and the user has confirmed which entity to book—do not jump straight here for 'who should I see?' questions. Pass the chat user's IANA timezone so date_from/date_to and returned local times match that user. If the result has an empty slots array, tell the user clearly that nothing is available in that range (do not imply they can pick a time).",
     parameters: {
       type: "object",
       properties: {
@@ -169,7 +206,7 @@ export const APPOINTMENT_TOOLS: Tool[] = [
   {
     name: "book_appointment",
     description:
-      "Book an appointment slot for a configured entity using the booker's name and email. Prefer a slot the user picked from check_available_slots. Use ISO-8601 times with offset. Pass the chat user's timezone for local confirmation times.",
+      "Book an appointment slot for a configured entity using the booker's name and email. Prefer a slot the user picked from check_available_slots. Use ISO-8601 times with offset. Pass the chat user's timezone for local confirmation times. The result includes meeting details: for online bookings meeting_url (Google Meet link); for offline bookings location_address and/or location_maps_url. ALWAYS include those meeting details in your confirmation to the user.",
     parameters: {
       type: "object",
       properties: {

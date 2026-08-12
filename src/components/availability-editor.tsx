@@ -206,15 +206,7 @@ export function AvailabilityEditor({
         })}
       </div>
 
-      <div className="mt-4 flex items-center gap-3 border-t border-border pt-4">
-        <button
-          type="button"
-          className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={onSave}
-          disabled={isBusy}
-        >
-          {saving ? "Saving…" : "Save availability"}
-        </button>
+      <div className="mt-4 flex items-center justify-end gap-3 border-t border-border pt-4">
         {saved ? (
           <span className="flex items-center gap-1.5 text-xs font-medium text-success">
             <Check
@@ -225,6 +217,14 @@ export function AvailabilityEditor({
             Saved
           </span>
         ) : null}
+        <button
+          type="button"
+          className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onSave}
+          disabled={isBusy}
+        >
+          {saving ? "Saving…" : "Save availability"}
+        </button>
       </div>
     </div>
   );

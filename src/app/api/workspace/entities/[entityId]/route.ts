@@ -3,9 +3,15 @@ import {
   deleteEntity,
   ensureWorkspaceForUser,
   getEntityForWorkspace,
+  getGoogleIntegrationForEntity,
+  listRoles,
+  resolveEntityRoleIds,
   updateEntity,
 } from "@/lib/appointment/repo";
-import { appointmentEntitySchema } from "@/lib/appointment/tools";
+import {
+  appointmentEntityMeetingSchema,
+  appointmentEntitySchema,
+} from "@/lib/appointment/tools";
 import { requireDashboardAuth } from "@/lib/auth/require-dashboard-auth";
 
 type RouteContext = {
@@ -48,13 +54,66 @@ export async function PUT(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
+  const roles = await listRoles(workspace.id);
+  const roleIdsResult = resolveEntityRoleIds({
+    availableRoles: roles,
+    selectedRoleIds: bodyParse.data.roleIds,
+  });
+  if (!roleIdsResult.ok) {
+    return NextResponse.json(
+      { ok: false, error: roleIdsResult.error },
+      { status: 400 },
+    );
+  }
+
+  // Only enforce offline location when switching to / saving offline meeting config
+  // with explicit location fields present in the request body.
+  const bodyRecord = (json ?? {}) as Record<string, unknown>;
+  const isMeetingConfigSave =
+    "meetingMode" in bodyRecord &&
+    ("locationAddress" in bodyRecord ||
+      "locationMapsUrl" in bodyRecord ||
+      bodyRecord.meetingMode === "online");
+  if (isMeetingConfigSave) {
+    const meetingParse = appointmentEntityMeetingSchema.safeParse({
+      meetingMode: bodyParse.data.meetingMode,
+      locationAddress: bodyParse.data.locationAddress,
+      locationMapsUrl: bodyParse.data.locationMapsUrl,
+    });
+    if (!meetingParse.success) {
+      const issue = meetingParse.error.issues[0];
+      return NextResponse.json(
+        { ok: false, error: issue?.message ?? "Invalid meeting settings" },
+        { status: 400 },
+      );
+    }
+  }
+
   try {
     const updated = await updateEntity({
       entityId,
       name: bodyParse.data.name,
       description: bodyParse.data.description,
+      roleIds: roleIdsResult.roleIds,
+      meetingMode: bodyParse.data.meetingMode,
+      locationAddress:
+        bodyParse.data.meetingMode === "offline"
+          ? bodyParse.data.locationAddress
+          : null,
+      locationMapsUrl:
+        bodyParse.data.meetingMode === "offline"
+          ? bodyParse.data.locationMapsUrl
+          : null,
     });
-    return NextResponse.json({ ok: true, entity: updated });
+    const google = await getGoogleIntegrationForEntity(entityId);
+    return NextResponse.json({
+      ok: true,
+      entity: updated,
+      google: {
+        connected: google.connected,
+        accountEmail: google.connected ? google.accountEmail : null,
+      },
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to update entity";

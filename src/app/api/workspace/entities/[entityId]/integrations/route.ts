@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { formatDateTimeInTimezone } from "@/lib/appointment/appointment-utils";
 import {
   ensureWorkspaceForUser,
   getEntityForWorkspace,
-  listAppointmentsForEntity,
+  getGoogleIntegrationForEntity,
 } from "@/lib/appointment/repo";
+import { isGoogleOAuthConfigured } from "@/lib/appointment/meeting/google";
 import { requireDashboardAuth } from "@/lib/auth/require-dashboard-auth";
 
 type RouteContext = {
@@ -27,24 +27,14 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  const appointments = await listAppointmentsForEntity(entityId);
-  const timezone = owned.workspace.timezone;
+  const google = await getGoogleIntegrationForEntity(entityId);
 
   return NextResponse.json({
     ok: true,
-    timezone,
-    bookings: appointments.map((appointment) => ({
-      id: appointment.id,
-      name: appointment.name,
-      email: appointment.email,
-      startTime: appointment.startTime.toISOString(),
-      endTime: appointment.endTime.toISOString(),
-      startLocal: formatDateTimeInTimezone(appointment.startTime, timezone),
-      endLocal: formatDateTimeInTimezone(appointment.endTime, timezone),
-      status: appointment.status,
-      meetingUrl: appointment.meetingUrl,
-      locationAddress: appointment.locationAddress,
-      locationMapsUrl: appointment.locationMapsUrl,
-    })),
+    google: {
+      configured: isGoogleOAuthConfigured(),
+      connected: google.connected,
+      accountEmail: google.connected ? google.accountEmail : null,
+    },
   });
 }

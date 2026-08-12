@@ -1,5 +1,11 @@
 export const APPOINTMENT_ANONYMOUS_USER_ID = "anonymous";
 
+export const APPOINTMENT_MEETING_MODES = ["online", "offline"] as const;
+export type AppointmentMeetingMode =
+  (typeof APPOINTMENT_MEETING_MODES)[number];
+
+export const APPOINTMENT_OAUTH_PROVIDER_GOOGLE = "google" as const;
+
 export const APPOINTMENT_SLOT_DURATION_OPTIONS = [
   { label: "15 min", minutes: 15 },
   { label: "30 min", minutes: 30 },

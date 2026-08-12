@@ -4,13 +4,25 @@ import {
   getAppointmentForWorkspace,
   getEntityForWorkspace,
   getWorkspaceById,
+  hasGoogleConnectionForEntity,
   hasOverlappingConfirmedAppointment,
   listAppointmentsForBookerInWorkspace,
   listAppointmentsForEntityInRange,
   listAvailabilityRulesForEntity,
   listEntities,
+  listRoles,
+  mapRolesById,
   rescheduleAppointmentRecord,
+  resolveRoleSummaries,
 } from "@/lib/appointment/repo";
+import {
+  appointmentMeetingDetails,
+  createMeetingForBooking,
+  deleteMeetingForBooking,
+  entityMeetingSummary,
+  updateMeetingForBooking,
+} from "@/lib/appointment/meeting";
+import { deleteGoogleMeetForBooking } from "@/lib/appointment/meeting/google";
 import {
   formatDateInTimezone,
   formatDateTimeInTimezone,
@@ -28,11 +40,19 @@ import {
 
 export type AppointmentToolCallResult = {
   content: Array<{ type: "text"; text: string }>;
+  /** Optional MCP Apps UI meta for this call (e.g. suppress picker when empty). */
+  _meta?: Record<string, unknown>;
 };
 
-function mcpStyleResult(data: Record<string, unknown>): AppointmentToolCallResult {
+function mcpStyleResult(
+  data: Record<string, unknown>,
+  meta?: Record<string, unknown>,
+): AppointmentToolCallResult {
   const text = JSON.stringify(data);
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    ...(meta ? { _meta: meta } : {}),
+  };
 }
 
 function withLocalTimes(
@@ -90,17 +110,36 @@ async function listEntitiesTool(
   workspaceId: string,
 ): Promise<AppointmentToolCallResult> {
   const workspace = await assertConfiguredWorkspace(workspaceId);
-  const entities = await listEntities(workspace.id);
+  const [entities, roles] = await Promise.all([
+    listEntities(workspace.id),
+    listRoles(workspace.id),
+  ]);
+  const rolesById = mapRolesById(roles);
+
+  const entitiesWithIntegrations = await Promise.all(
+    entities.map(async (entity) => ({
+      id: entity.id,
+      name: entity.name,
+      description: entity.description,
+      roles: resolveRoleSummaries(entity.roleIds, rolesById),
+      google_connected:
+        entity.meetingMode === "online"
+          ? await hasGoogleConnectionForEntity(entity.id)
+          : false,
+      ...entityMeetingSummary(entity),
+    })),
+  );
 
   return mcpStyleResult({
     ok: true,
     entity_label: workspace.entityLabel,
     business_timezone: workspace.timezone,
-    entities: entities.map((entity) => ({
-      id: entity.id,
-      name: entity.name,
-      description: entity.description,
+    roles: roles.map((role) => ({
+      id: role.id,
+      name: role.name,
+      description: role.description,
     })),
+    entities: entitiesWithIntegrations,
   });
 }
 
@@ -170,16 +209,28 @@ async function checkAvailableSlotsTool(options: {
     )
     .map((slot) => withLocalTimes(slot.start, slot.end, userTimezone));
 
-  return mcpStyleResult({
-    ok: true,
-    entity_id: owned.entity.id,
-    entity_name: owned.entity.name,
-    entity_label: workspace.entityLabel,
-    business_timezone: businessTimezone,
-    user_timezone: userTimezone,
-    slot_duration_minutes: workspace.slotDurationMinutes,
-    slots,
-  });
+  return mcpStyleResult(
+    {
+      ok: true,
+      entity_id: owned.entity.id,
+      entity_name: owned.entity.name,
+      entity_label: workspace.entityLabel,
+      business_timezone: businessTimezone,
+      user_timezone: userTimezone,
+      slot_duration_minutes: workspace.slotDurationMinutes,
+      slots,
+      message:
+        slots.length === 0
+          ? `No available times for ${owned.entity.name} in the requested date range.`
+          : undefined,
+    },
+    slots.length === 0
+      ? {
+          // Ask host not to present the interactive picker when there is nothing to choose.
+          ui: { visibility: ["model"] },
+        }
+      : undefined,
+  );
 }
 
 async function bookAppointmentTool(options: {
@@ -240,13 +291,65 @@ async function bookAppointmentTool(options: {
     throw new Error("Requested slot is no longer available");
   }
 
-  const appointment = await createAppointmentRecord({
-    entityId: owned.entity.id,
-    name: parsed.data.name,
-    email: parsed.data.email,
-    startTime: slotStart,
-    endTime: slotEnd,
-  });
+  if (owned.entity.meetingMode === "online") {
+    const connected = await hasGoogleConnectionForEntity(owned.entity.id);
+    if (!connected) {
+      throw new Error("Google is not connected for this online entity");
+    }
+  } else {
+    const hasAddress = Boolean(owned.entity.locationAddress?.trim());
+    const hasMaps = Boolean(owned.entity.locationMapsUrl?.trim());
+    if (!hasAddress && !hasMaps) {
+      throw new Error(
+        "This offline entity has no address or Maps URL configured",
+      );
+    }
+  }
+
+  let meetingDetails;
+  try {
+    meetingDetails = await createMeetingForBooking({
+      entity: owned.entity,
+      bookerName: parsed.data.name,
+      bookerEmail: parsed.data.email,
+      startTime: slotStart,
+      endTime: slotEnd,
+      timezone: workspace.timezone,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to create Google Meet link";
+    throw new Error(message);
+  }
+
+  let appointment;
+  try {
+    appointment = await createAppointmentRecord({
+      entityId: owned.entity.id,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      startTime: slotStart,
+      endTime: slotEnd,
+      meetingUrl: meetingDetails.meetingUrl,
+      externalMeetingId: meetingDetails.externalMeetingId,
+      locationAddress: meetingDetails.locationAddress,
+      locationMapsUrl: meetingDetails.locationMapsUrl,
+    });
+  } catch (error) {
+    if (meetingDetails.externalMeetingId) {
+      try {
+        await deleteGoogleMeetForBooking({
+          entityId: owned.entity.id,
+          externalMeetingId: meetingDetails.externalMeetingId,
+        });
+      } catch {
+        // Best-effort rollback.
+      }
+    }
+    throw error;
+  }
 
   const local = withLocalTimes(
     appointment.startTime,
@@ -268,6 +371,8 @@ async function bookAppointmentTool(options: {
     name: appointment.name,
     email: appointment.email,
     status: appointment.status,
+    meeting_mode: owned.entity.meetingMode,
+    ...appointmentMeetingDetails(appointment),
   });
 }
 
@@ -297,6 +402,11 @@ async function cancelAppointmentTool(options: {
     throw new Error("Failed to cancel appointment");
   }
 
+  await deleteMeetingForBooking({
+    entity: appointment.entity,
+    appointment: appointment.appointment,
+  });
+
   const result: Record<string, unknown> = {
     ok: true,
     appointment_id: updated.id,
@@ -304,6 +414,7 @@ async function cancelAppointmentTool(options: {
     business_timezone: appointment.workspace.timezone,
     start_time: updated.startTime.toISOString(),
     end_time: updated.endTime.toISOString(),
+    ...appointmentMeetingDetails(updated),
   };
   if (parsed.data.timezone) {
     const local = withLocalTimes(
@@ -392,6 +503,22 @@ async function rescheduleAppointmentTool(options: {
     throw new Error("Failed to reschedule appointment");
   }
 
+  try {
+    await updateMeetingForBooking({
+      entity: appointment.entity,
+      appointment: appointment.appointment,
+      startTime: slotStart,
+      endTime: slotEnd,
+      timezone: workspace.timezone,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to update Google Calendar event";
+    throw new Error(message);
+  }
+
   const local = withLocalTimes(
     updated.startTime,
     updated.endTime,
@@ -409,6 +536,7 @@ async function rescheduleAppointmentTool(options: {
     start_local: local.start_local,
     end_local: local.end_local,
     status: updated.status,
+    ...appointmentMeetingDetails(updated),
   });
 }
 
@@ -440,6 +568,8 @@ async function listUserAppointmentsTool(options: {
       status: appointment.status,
       start_time: appointment.startTime.toISOString(),
       end_time: appointment.endTime.toISOString(),
+      meeting_mode: entity.meetingMode,
+      ...appointmentMeetingDetails(appointment),
     };
     if (parsed.data.timezone) {
       const local = withLocalTimes(
