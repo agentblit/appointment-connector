@@ -1,9 +1,31 @@
+import type {
+  AppointmentBookingPeriodDaysKind,
+  AppointmentBookingPeriodType,
+} from "@/lib/appointment/constants";
 import type { AppointmentAvailabilityRuleRow } from "@/lib/appointment/schema";
 
 export type AvailabilityRuleInput = Pick<
   AppointmentAvailabilityRuleRow,
   "dayOfWeek" | "startTime" | "endTime"
 >;
+
+export type TimeWindowInput = {
+  startTime: string;
+  endTime: string;
+};
+
+export type DateRuleInput = {
+  date: string;
+  windows: TimeWindowInput[];
+};
+
+export type BookingPeriodInput = {
+  type: AppointmentBookingPeriodType;
+  availableFrom?: string | null;
+  availableTo?: string | null;
+  days?: number | null;
+  daysKind?: AppointmentBookingPeriodDaysKind | null;
+};
 
 export type ConfirmedAppointmentSlot = {
   startTime: Date;
@@ -14,6 +36,14 @@ export type ConfirmedAppointmentSlot = {
 export type GeneratedTimeSlot = {
   start: string;
   end: string;
+};
+
+export const UNLIMITED_BOOKING_PERIOD: BookingPeriodInput = {
+  type: "unlimited",
+  availableFrom: null,
+  availableTo: null,
+  days: null,
+  daysKind: null,
 };
 
 const WEEKDAY_TO_INDEX: Record<string, number> = {
@@ -158,6 +188,45 @@ export function zonedDateTimeToUtc(
   return new Date(utcMs);
 }
 
+export function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  return (
+    utc.getUTCFullYear() === year &&
+    utc.getUTCMonth() === month - 1 &&
+    utc.getUTCDate() === day
+  );
+}
+
+/** Add `days` to a YYYY-MM-DD calendar date (not timezone-aware). */
+export function addCalendarDays(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day + days));
+  const yyyy = String(utc.getUTCFullYear()).padStart(4, "0");
+  const mm = String(utc.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(utc.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export function iterateCalendarDates(dateFrom: string, dateTo: string): string[] {
+  const dates: string[] = [];
+  if (dateFrom > dateTo) {
+    return dates;
+  }
+  let current = dateFrom;
+  while (current <= dateTo) {
+    dates.push(current);
+    current = addCalendarDays(current, 1);
+    if (dates.length > 366) {
+      break;
+    }
+  }
+  return dates;
+}
+
 function iterateDateStrings(
   dateFrom: string,
   dateTo: string,
@@ -177,6 +246,90 @@ function iterateDateStrings(
   return dates;
 }
 
+export function lastDateForMovingPeriod(
+  today: string,
+  days: number,
+  daysKind: AppointmentBookingPeriodDaysKind,
+  timezone: string,
+): string {
+  if (daysKind === "calendar") {
+    return addCalendarDays(today, Math.max(days, 1) - 1);
+  }
+
+  let counted = 0;
+  let current = today;
+  let last = today;
+  for (let step = 0; step < 800 && counted < days; step += 1) {
+    const weekday = getWeekdayInTimezone(
+      zonedDateTimeToUtc(current, "12:00", timezone),
+      timezone,
+    );
+    if (weekday !== 0 && weekday !== 6) {
+      counted += 1;
+      last = current;
+    }
+    if (counted >= days) {
+      break;
+    }
+    current = addCalendarDays(current, 1);
+  }
+  return last;
+}
+
+export function isDateInBookingPeriod(
+  dateStr: string,
+  period: BookingPeriodInput,
+  options: { now?: Date; timezone: string },
+): boolean {
+  if (period.type === "unlimited") {
+    return true;
+  }
+
+  if (period.type === "fixed") {
+    if (!period.availableFrom || !period.availableTo) {
+      return false;
+    }
+    if (dateStr < period.availableFrom || dateStr > period.availableTo) {
+      return false;
+    }
+    return true;
+  }
+
+  const days = period.days ?? 0;
+  if (days <= 0) {
+    return false;
+  }
+  const today = formatDateInTimezone(options.now ?? new Date(), options.timezone);
+  if (dateStr < today) {
+    return false;
+  }
+  const last = lastDateForMovingPeriod(
+    today,
+    days,
+    period.daysKind === "weekdays" ? "weekdays" : "calendar",
+    options.timezone,
+  );
+  return dateStr <= last;
+}
+
+export function windowsForDate(options: {
+  dateStr: string;
+  weekday: number;
+  weeklyRules: AvailabilityRuleInput[];
+  dateRules: DateRuleInput[];
+}): TimeWindowInput[] {
+  const dateRule = options.dateRules.find((rule) => rule.date === options.dateStr);
+  if (dateRule) {
+    return dateRule.windows;
+  }
+  return options.weeklyRules
+    .filter((rule) => rule.dayOfWeek === options.weekday)
+    .map((rule) => ({
+      startTime: rule.startTime,
+      endTime: rule.endTime,
+    }));
+}
+
 function slotsOverlap(
   aStart: Date,
   aEnd: Date,
@@ -188,6 +341,8 @@ function slotsOverlap(
 
 export function generateAvailableSlots(options: {
   rules: AvailabilityRuleInput[];
+  dateRules?: DateRuleInput[];
+  bookingPeriod?: BookingPeriodInput;
   existingAppointments: ConfirmedAppointmentSlot[];
   dateFrom: string;
   dateTo: string;
@@ -197,6 +352,8 @@ export function generateAvailableSlots(options: {
 }): GeneratedTimeSlot[] {
   const {
     rules,
+    dateRules = [],
+    bookingPeriod = UNLIMITED_BOOKING_PERIOD,
     existingAppointments,
     dateFrom,
     dateTo,
@@ -211,15 +368,26 @@ export function generateAvailableSlots(options: {
   );
 
   for (const dateStr of iterateDateStrings(dateFrom, dateTo, timezone)) {
+    if (
+      !isDateInBookingPeriod(dateStr, bookingPeriod, { now, timezone })
+    ) {
+      continue;
+    }
+
     const weekday = getWeekdayInTimezone(
       zonedDateTimeToUtc(dateStr, "12:00", timezone),
       timezone,
     );
-    const dayRules = rules.filter((rule) => rule.dayOfWeek === weekday);
+    const dayWindows = windowsForDate({
+      dateStr,
+      weekday,
+      weeklyRules: rules,
+      dateRules,
+    });
 
-    for (const rule of dayRules) {
-      const ruleStart = parseTimeToMinutes(rule.startTime);
-      const ruleEnd = parseTimeToMinutes(rule.endTime);
+    for (const window of dayWindows) {
+      const ruleStart = parseTimeToMinutes(window.startTime);
+      const ruleEnd = parseTimeToMinutes(window.endTime);
       if (ruleEnd <= ruleStart) {
         continue;
       }
@@ -270,12 +438,27 @@ export function generateAvailableSlots(options: {
 
 export function isSlotWithinAvailability(options: {
   rules: AvailabilityRuleInput[];
+  dateRules?: DateRuleInput[];
+  bookingPeriod?: BookingPeriodInput;
   slotStart: Date;
   slotEnd: Date;
   timezone: string;
+  now?: Date;
 }): boolean {
-  const { rules, slotStart, slotEnd, timezone } = options;
+  const {
+    rules,
+    dateRules = [],
+    bookingPeriod = UNLIMITED_BOOKING_PERIOD,
+    slotStart,
+    slotEnd,
+    timezone,
+    now = new Date(),
+  } = options;
   const dateStr = formatDateInTimezone(slotStart, timezone);
+  if (!isDateInBookingPeriod(dateStr, bookingPeriod, { now, timezone })) {
+    return false;
+  }
+
   const weekday = getWeekdayInTimezone(slotStart, timezone);
   const startMinutes = parseTimeToMinutes(
     new Intl.DateTimeFormat("en-GB", {
@@ -298,12 +481,14 @@ export function isSlotWithinAvailability(options: {
     return false;
   }
 
-  return rules.some((rule) => {
-    if (rule.dayOfWeek !== weekday) {
-      return false;
-    }
-    const ruleStart = parseTimeToMinutes(rule.startTime);
-    const ruleEnd = parseTimeToMinutes(rule.endTime);
+  return windowsForDate({
+    dateStr,
+    weekday,
+    weeklyRules: rules,
+    dateRules,
+  }).some((window) => {
+    const ruleStart = parseTimeToMinutes(window.startTime);
+    const ruleEnd = parseTimeToMinutes(window.endTime);
     return startMinutes >= ruleStart && endMinutes <= ruleEnd;
   });
 }
@@ -319,6 +504,54 @@ export function validateAvailabilityRules(
     const end = parseTimeToMinutes(rule.endTime);
     if (end <= start) {
       return "Availability end time must be after start time";
+    }
+  }
+  return null;
+}
+
+export function validateDateRules(dateRules: DateRuleInput[]): string | null {
+  const seen = new Set<string>();
+  for (const rule of dateRules) {
+    if (!isValidIsoDate(rule.date)) {
+      return "Exception dates require a valid YYYY-MM-DD date";
+    }
+    if (seen.has(rule.date)) {
+      return "Each date can only have one exception rule";
+    }
+    seen.add(rule.date);
+    for (const window of rule.windows) {
+      const start = parseTimeToMinutes(window.startTime);
+      const end = parseTimeToMinutes(window.endTime);
+      if (end <= start) {
+        return "Exception end time must be after start time";
+      }
+    }
+  }
+  return null;
+}
+
+export function validateBookingPeriod(
+  period: BookingPeriodInput,
+): string | null {
+  if (period.type === "fixed") {
+    if (!period.availableFrom || !period.availableTo) {
+      return "Booking window requires both start and end dates";
+    }
+    if (!isValidIsoDate(period.availableFrom)) {
+      return "Booking window start must be a valid YYYY-MM-DD date";
+    }
+    if (!isValidIsoDate(period.availableTo)) {
+      return "Booking window end must be a valid YYYY-MM-DD date";
+    }
+    if (period.availableFrom > period.availableTo) {
+      return "Booking window start must be on or before the end date";
+    }
+    return null;
+  }
+  if (period.type === "moving") {
+    const days = period.days ?? 0;
+    if (!Number.isInteger(days) || days < 1 || days > 730) {
+      return "Rolling booking window must be between 1 and 730 days";
     }
   }
   return null;

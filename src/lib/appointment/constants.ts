@@ -43,3 +43,18 @@ export const APPOINTMENT_DAY_LABELS = [
   "Friday",
   "Saturday",
 ] as const;
+
+export const APPOINTMENT_BOOKING_PERIOD_TYPES = [
+  "unlimited",
+  "moving",
+  "fixed",
+] as const;
+export type AppointmentBookingPeriodType =
+  (typeof APPOINTMENT_BOOKING_PERIOD_TYPES)[number];
+
+export const APPOINTMENT_BOOKING_PERIOD_DAYS_KINDS = [
+  "calendar",
+  "weekdays",
+] as const;
+export type AppointmentBookingPeriodDaysKind =
+  (typeof APPOINTMENT_BOOKING_PERIOD_DAYS_KINDS)[number];

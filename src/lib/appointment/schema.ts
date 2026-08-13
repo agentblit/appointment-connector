@@ -1,4 +1,5 @@
 import {
+  date,
   index,
   integer,
   pgSchema,
@@ -90,6 +91,13 @@ export const appointmentEntities = appointmentSchema.table(
       .default("offline"),
     locationAddress: text("location_address"),
     locationMapsUrl: text("location_maps_url"),
+    bookingPeriodType: varchar("booking_period_type", { length: 20 })
+      .notNull()
+      .default("unlimited"),
+    availableFrom: date("available_from", { mode: "string" }),
+    availableTo: date("available_to", { mode: "string" }),
+    bookingPeriodDays: integer("booking_period_days"),
+    bookingPeriodDaysKind: varchar("booking_period_days_kind", { length: 20 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -118,6 +126,40 @@ export const appointmentAvailabilityRules = appointmentSchema.table(
     endTime: varchar("end_time", { length: 5 }).notNull(),
   },
   (t) => [index("appointment_availability_entity_id_idx").on(t.entityId)],
+);
+
+/** Calendly-style date-specific hours: one rule per calendar date. */
+export const appointmentAvailabilityDateRules = appointmentSchema.table(
+  "availability_date_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => appointmentEntities.id, { onDelete: "cascade" }),
+    date: date("date", { mode: "string" }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("appointment_date_rules_entity_date_uidx").on(
+      t.entityId,
+      t.date,
+    ),
+    index("appointment_date_rules_entity_id_idx").on(t.entityId),
+  ],
+);
+
+export const appointmentAvailabilityDateRuleWindows = appointmentSchema.table(
+  "availability_date_rule_windows",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => appointmentAvailabilityDateRules.id, {
+        onDelete: "cascade",
+      }),
+    startTime: varchar("start_time", { length: 5 }).notNull(),
+    endTime: varchar("end_time", { length: 5 }).notNull(),
+  },
+  (t) => [index("appointment_date_rule_windows_rule_id_idx").on(t.ruleId)],
 );
 
 export const appointmentAppointments = appointmentSchema.table(
@@ -189,6 +231,10 @@ export type AppointmentRoleRow = typeof appointmentRoles.$inferSelect;
 export type AppointmentEntityRow = typeof appointmentEntities.$inferSelect;
 export type AppointmentAvailabilityRuleRow =
   typeof appointmentAvailabilityRules.$inferSelect;
+export type AppointmentAvailabilityDateRuleRow =
+  typeof appointmentAvailabilityDateRules.$inferSelect;
+export type AppointmentAvailabilityDateRuleWindowRow =
+  typeof appointmentAvailabilityDateRuleWindows.$inferSelect;
 export type AppointmentRow = typeof appointmentAppointments.$inferSelect;
 export type AppointmentOauthConnectionRow =
   typeof appointmentOauthConnections.$inferSelect;

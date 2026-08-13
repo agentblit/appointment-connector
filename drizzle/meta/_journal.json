@@ -15,6 +15,13 @@
       "when": 1786548695683,
       "tag": "0001_meeting_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786642692027,
+      "tag": "0002_tiny_sleeper",
+      "breakpoints": true
     }
   ]
 }

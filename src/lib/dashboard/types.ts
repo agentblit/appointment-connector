@@ -1,4 +1,8 @@
 import type { AvailabilityRule } from "@/components/availability-editor";
+import type {
+  AppointmentBookingPeriodDaysKind,
+  AppointmentBookingPeriodType,
+} from "@/lib/appointment/constants";
 
 export type ApiKeyMeta = {
   id: string;
@@ -12,6 +16,27 @@ export type WorkspaceRole = {
   description: string;
 };
 
+export type DateRule = {
+  date: string;
+  windows: Array<{ startTime: string; endTime: string }>;
+};
+
+export type BookingPeriod = {
+  type: AppointmentBookingPeriodType;
+  availableFrom: string | null;
+  availableTo: string | null;
+  days: number | null;
+  daysKind: AppointmentBookingPeriodDaysKind | null;
+};
+
+export const emptyBookingPeriod = (): BookingPeriod => ({
+  type: "unlimited",
+  availableFrom: null,
+  availableTo: null,
+  days: null,
+  daysKind: null,
+});
+
 export type EntityRow = {
   id: string;
   name: string;
@@ -23,6 +48,8 @@ export type EntityRow = {
   googleConnected?: boolean;
   googleAccountEmail?: string | null;
   availabilityRules: AvailabilityRule[];
+  dateRules: DateRule[];
+  bookingPeriod: BookingPeriod;
 };
 
 export type BookingRow = {

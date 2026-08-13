@@ -4,7 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { EntityManager } from "@/components/entity-manager";
 import { useWorkspace } from "@/lib/dashboard/workspace-context";
-import type { EntityRow, WorkspaceRole } from "@/lib/dashboard/types";
+import {
+  emptyBookingPeriod,
+  type EntityRow,
+  type WorkspaceRole,
+} from "@/lib/dashboard/types";
 
 function pluralize(label: string) {
   if (label.toLowerCase().endsWith("s")) return label;
@@ -53,7 +57,15 @@ export default function EntitiesPage() {
       }
 
       setEntities((current) =>
-        [...current, { ...data.entity!, availabilityRules: [] }].sort((a, b) =>
+        [
+          ...current,
+          {
+            ...data.entity!,
+            availabilityRules: data.entity!.availabilityRules ?? [],
+            dateRules: data.entity!.dateRules ?? [],
+            bookingPeriod: data.entity!.bookingPeriod ?? emptyBookingPeriod(),
+          },
+        ].sort((a, b) =>
           a.name.localeCompare(b.name),
         ),
       );

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { APPOINTMENT_SLOT_DURATION_MINUTES } from "@/lib/appointment/constants";
-import { isValidIanaTimezone } from "@/lib/appointment/appointment-utils";
+import {
+  isValidIanaTimezone,
+  isValidIsoDate,
+} from "@/lib/appointment/appointment-utils";
 
 /** Matches agentblit `ToolPermissionMode` wire values. */
 export enum ToolPermissionMode {
@@ -141,22 +144,62 @@ export const appointmentEntityMeetingSchema = z
     }
   });
 
+const hhmmSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{2}:\d{2}$/, "Time must be HH:MM");
+
+const calendarDateSchema = isoDateSchema.refine(
+  isValidIsoDate,
+  "Date must be a valid calendar day (YYYY-MM-DD)",
+);
+
+const timeWindowSchema = z.object({
+  startTime: hhmmSchema,
+  endTime: hhmmSchema,
+});
+
+export const appointmentBookingPeriodSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("unlimited"),
+    availableFrom: z.null().optional(),
+    availableTo: z.null().optional(),
+    days: z.null().optional(),
+    daysKind: z.null().optional(),
+  }),
+  z.object({
+    type: z.literal("fixed"),
+    availableFrom: calendarDateSchema,
+    availableTo: calendarDateSchema,
+    days: z.null().optional(),
+    daysKind: z.null().optional(),
+  }),
+  z.object({
+    type: z.literal("moving"),
+    days: z.number().int().min(1).max(730),
+    daysKind: z.enum(["calendar", "weekdays"]).default("calendar"),
+    availableFrom: z.null().optional(),
+    availableTo: z.null().optional(),
+  }),
+]);
+
 export const appointmentAvailabilityRulesSchema = z.object({
-  rules: z
-    .array(
-      z.object({
-        dayOfWeek: z.number().int().min(0).max(6),
-        startTime: z
-          .string()
-          .trim()
-          .regex(/^\d{2}:\d{2}$/, "startTime must be HH:MM"),
-        endTime: z
-          .string()
-          .trim()
-          .regex(/^\d{2}:\d{2}$/, "endTime must be HH:MM"),
-      }),
-    )
-    .default([]),
+  rules: z.array(
+    z.object({
+      dayOfWeek: z.number().int().min(0).max(6),
+      startTime: hhmmSchema,
+      endTime: hhmmSchema,
+    }),
+  ),
+  // Required (no defaults): omitting these would wipe exceptions / reset the
+  // booking window when replaceAvailabilityForEntity persists the full payload.
+  dateRules: z.array(
+    z.object({
+      date: calendarDateSchema,
+      windows: z.array(timeWindowSchema).default([]),
+    }),
+  ),
+  bookingPeriod: appointmentBookingPeriodSchema,
 });
 
 const timezoneProperty = {

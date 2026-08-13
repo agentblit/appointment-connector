@@ -8,7 +8,9 @@ import {
   hasOverlappingConfirmedAppointment,
   listAppointmentsForBookerInWorkspace,
   listAppointmentsForEntityInRange,
+  bookingPeriodFromEntity,
   listAvailabilityRulesForEntity,
+  listDateRulesForEntity,
   listEntities,
   listRoles,
   mapRolesById,
@@ -182,7 +184,10 @@ async function checkAvailableSlotsTool(options: {
     businessTimezone,
   );
 
-  const rules = await listAvailabilityRulesForEntity(owned.entity.id);
+  const [rules, dateRules] = await Promise.all([
+    listAvailabilityRulesForEntity(owned.entity.id),
+    listDateRulesForEntity(owned.entity.id),
+  ]);
   const appointments = await listAppointmentsForEntityInRange({
     entityId: owned.entity.id,
     dateFrom: utcFrom,
@@ -191,6 +196,8 @@ async function checkAvailableSlotsTool(options: {
 
   const generated = generateAvailableSlots({
     rules,
+    dateRules,
+    bookingPeriod: bookingPeriodFromEntity(owned.entity),
     existingAppointments: appointments,
     dateFrom: businessDateFrom,
     dateTo: businessDateTo,
@@ -270,10 +277,15 @@ async function bookAppointmentTool(options: {
     );
   }
 
-  const rules = await listAvailabilityRulesForEntity(owned.entity.id);
+  const [rules, dateRules] = await Promise.all([
+    listAvailabilityRulesForEntity(owned.entity.id),
+    listDateRulesForEntity(owned.entity.id),
+  ]);
   if (
     !isSlotWithinAvailability({
       rules,
+      dateRules,
+      bookingPeriod: bookingPeriodFromEntity(owned.entity),
       slotStart,
       slotEnd,
       timezone: workspace.timezone,
@@ -472,10 +484,15 @@ async function rescheduleAppointmentTool(options: {
     );
   }
 
-  const rules = await listAvailabilityRulesForEntity(appointment.entity.id);
+  const [rules, dateRules] = await Promise.all([
+    listAvailabilityRulesForEntity(appointment.entity.id),
+    listDateRulesForEntity(appointment.entity.id),
+  ]);
   if (
     !isSlotWithinAvailability({
       rules,
+      dateRules,
+      bookingPeriod: bookingPeriodFromEntity(appointment.entity),
       slotStart,
       slotEnd,
       timezone: workspace.timezone,

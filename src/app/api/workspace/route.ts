@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { isValidIanaTimezone } from "@/lib/appointment/appointment-utils";
 import { isGoogleOAuthConfigured } from "@/lib/appointment/meeting/google";
 import {
+  bookingPeriodFromEntity,
   ensureWorkspaceForUser,
   getGoogleIntegrationForEntity,
   getWorkspaceWithEntities,
   listApiKeys,
+  serializeBookingPeriod,
   updateWorkspace,
 } from "@/lib/appointment/repo";
 import { appointmentWorkspaceConfigSchema } from "@/lib/appointment/tools";
@@ -54,6 +56,8 @@ export async function GET(request: Request) {
           startTime: rule.startTime,
           endTime: rule.endTime,
         })),
+        dateRules: entity.dateRules,
+        bookingPeriod: serializeBookingPeriod(bookingPeriodFromEntity(entity)),
       };
     }),
   );

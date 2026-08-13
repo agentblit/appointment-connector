@@ -32,7 +32,7 @@ export function availabilityMapFromRules(
 const timeInputClassName =
   "relative h-8 w-36 shrink-0 rounded-lg border border-border bg-muted px-2 pr-8 text-sm text-foreground outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/30 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:top-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-8 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0";
 
-function TimeInput({
+export function TimeInput({
   value,
   disabled,
   onChange,
@@ -64,10 +64,11 @@ type AvailabilityEditorProps = {
     dayOfWeek: number,
     updater: (rules: AvailabilityRule[]) => AvailabilityRule[],
   ) => void;
-  onSave: () => void;
+  onSave?: () => void;
   saving?: boolean;
   saved?: boolean;
   disabled?: boolean;
+  hideSave?: boolean;
 };
 
 export function AvailabilityEditor({
@@ -77,6 +78,7 @@ export function AvailabilityEditor({
   saving = false,
   saved = false,
   disabled = false,
+  hideSave = false,
 }: AvailabilityEditorProps) {
   const isBusy = saving || disabled;
 
@@ -206,26 +208,28 @@ export function AvailabilityEditor({
         })}
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-3 border-t border-border pt-4">
-        {saved ? (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-success">
-            <Check
-              className="h-3.5 w-3.5"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-            Saved
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={onSave}
-          disabled={isBusy}
-        >
-          {saving ? "Saving…" : "Save availability"}
-        </button>
-      </div>
+      {hideSave ? null : (
+        <div className="mt-4 flex items-center justify-end gap-3 border-t border-border pt-4">
+          {saved ? (
+            <span className="flex items-center gap-1.5 text-xs font-medium text-success">
+              <Check
+                className="h-3.5 w-3.5"
+                strokeWidth={2.5}
+                aria-hidden="true"
+              />
+              Saved
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={onSave}
+            disabled={isBusy}
+          >
+            {saving ? "Saving…" : "Save availability"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,8 @@ import {
   rulesFromAvailabilityMap,
   type AvailabilityRule,
 } from "@/components/availability-editor";
+import { BookingPeriodEditor } from "@/components/booking-period-editor";
+import { ExceptionsEditor } from "@/components/date-specific-hours-editor";
 import {
   GoogleIntegrationPanel,
   MeetingModeFields,
@@ -17,8 +19,11 @@ import {
 import { useWorkspace } from "@/lib/dashboard/workspace-context";
 import {
   buttonPrimaryClassName,
+  emptyBookingPeriod,
   formatBookingRange,
+  type BookingPeriod,
   type BookingRow,
+  type DateRule,
   type EntityRow,
 } from "@/lib/dashboard/types";
 
@@ -51,6 +56,11 @@ export default function EntityDetailPage() {
   const [availabilityDraft, setAvailabilityDraft] = useState<
     Record<number, AvailabilityRule[]>
   >(emptyAvailabilityByDay());
+  const [bookingPeriodDraft, setBookingPeriodDraft] = useState<BookingPeriod>(
+    emptyBookingPeriod,
+  );
+  const [dateRulesDraft, setDateRulesDraft] = useState<DateRule[]>([]);
+  const [exceptionsValid, setExceptionsValid] = useState(true);
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [savedAvailability, setSavedAvailability] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(true);
@@ -84,6 +94,11 @@ export default function EntityDetailPage() {
     setAvailabilityDraft(
       availabilityMapFromRules(selectedEntity.availabilityRules ?? []),
     );
+    setBookingPeriodDraft(
+      selectedEntity.bookingPeriod ?? emptyBookingPeriod(),
+    );
+    setDateRulesDraft(selectedEntity.dateRules ?? []);
+    setExceptionsValid(true);
     try {
       const res = await fetch(
         `/api/workspace/entities/${encodeURIComponent(selectedEntity.id)}/bookings`,
@@ -239,6 +254,17 @@ export default function EntityDetailPage() {
     event?.preventDefault();
     if (!entityId) return;
     const rules = rulesFromAvailabilityMap(availabilityDraft);
+    if (
+      bookingPeriodDraft.type === "fixed" &&
+      (!bookingPeriodDraft.availableFrom || !bookingPeriodDraft.availableTo)
+    ) {
+      setError("Choose both start and end dates for the booking window");
+      return;
+    }
+    if (!exceptionsValid) {
+      setError("Fix overlapping exceptions before saving");
+      return;
+    }
     setSavingAvailability(true);
     setSavedAvailability(false);
     setError("");
@@ -249,21 +275,34 @@ export default function EntityDetailPage() {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rules }),
+          body: JSON.stringify({
+            rules,
+            dateRules: dateRulesDraft,
+            bookingPeriod: bookingPeriodDraft,
+          }),
         },
       );
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
         rules?: AvailabilityRule[];
+        dateRules?: DateRule[];
+        bookingPeriod?: BookingPeriod;
       };
       if (!res.ok || !data.ok) {
         throw new Error(data.error ?? "Failed to save availability");
       }
+      setDateRulesDraft(data.dateRules ?? dateRulesDraft);
+      setBookingPeriodDraft(data.bookingPeriod ?? bookingPeriodDraft);
       setEntities((current) =>
         current.map((entity) =>
           entity.id === entityId
-            ? { ...entity, availabilityRules: data.rules ?? rules }
+            ? {
+                ...entity,
+                availabilityRules: data.rules ?? rules,
+                dateRules: data.dateRules ?? dateRulesDraft,
+                bookingPeriod: data.bookingPeriod ?? bookingPeriodDraft,
+              }
             : entity,
         ),
       );
@@ -368,20 +407,58 @@ export default function EntityDetailPage() {
           {loadingDetail && !selectedEntity ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <AvailabilityEditor
-              draft={availabilityDraft}
-              onChange={(dayOfWeek, updater) => {
-                setSavedAvailability(false);
-                setAvailabilityDraft((current) => ({
-                  ...current,
-                  [dayOfWeek]: updater(current[dayOfWeek] ?? []),
-                }));
-              }}
-              onSave={() => void handleSaveAvailability()}
-              saving={savingAvailability}
-              saved={savedAvailability}
-              disabled={savingAvailability}
-            />
+            <div className="space-y-6">
+              <BookingPeriodEditor
+                value={bookingPeriodDraft}
+                disabled={savingAvailability}
+                onChange={(next) => {
+                  setSavedAvailability(false);
+                  setBookingPeriodDraft(next);
+                }}
+              />
+              <div className="border-t border-border pt-4">
+                <p className="mb-2 text-sm font-medium text-foreground">
+                  Weekly hours
+                </p>
+                <AvailabilityEditor
+                  draft={availabilityDraft}
+                  hideSave
+                  onChange={(dayOfWeek, updater) => {
+                    setSavedAvailability(false);
+                    setAvailabilityDraft((current) => ({
+                      ...current,
+                      [dayOfWeek]: updater(current[dayOfWeek] ?? []),
+                    }));
+                  }}
+                  saving={savingAvailability}
+                  disabled={savingAvailability}
+                />
+              </div>
+              <div className="border-t border-border pt-4">
+                <ExceptionsEditor
+                  rules={dateRulesDraft}
+                  disabled={savingAvailability}
+                  onValidityChange={setExceptionsValid}
+                  onChange={(next) => {
+                    setSavedAvailability(false);
+                    setDateRulesDraft(next);
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+                {savedAvailability ? (
+                  <span className="text-xs font-medium text-success">Saved</span>
+                ) : null}
+                <button
+                  type="button"
+                  className={buttonPrimaryClassName + " h-9 px-4 text-sm"}
+                  onClick={() => void handleSaveAvailability()}
+                  disabled={savingAvailability || !exceptionsValid}
+                >
+                  {savingAvailability ? "Saving…" : "Save availability"}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

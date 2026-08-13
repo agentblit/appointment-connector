@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
-import { validateAvailabilityRules } from "@/lib/appointment/appointment-utils";
 import {
+  validateAvailabilityRules,
+  validateBookingPeriod,
+  validateDateRules,
+} from "@/lib/appointment/appointment-utils";
+import {
+  bookingPeriodFromEntity,
   ensureWorkspaceForUser,
   getEntityForWorkspace,
   listAvailabilityRulesForEntity,
-  replaceAvailabilityRulesForEntity,
+  listDateRulesForEntity,
+  replaceAvailabilityForEntity,
+  serializeBookingPeriod,
 } from "@/lib/appointment/repo";
 import { appointmentAvailabilityRulesSchema } from "@/lib/appointment/tools";
 import { requireDashboardAuth } from "@/lib/auth/require-dashboard-auth";
@@ -29,8 +36,16 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  const rules = await listAvailabilityRulesForEntity(entityId);
-  return NextResponse.json({ ok: true, rules });
+  const [rules, dateRules] = await Promise.all([
+    listAvailabilityRulesForEntity(entityId),
+    listDateRulesForEntity(entityId),
+  ]);
+  return NextResponse.json({
+    ok: true,
+    rules,
+    dateRules,
+    bookingPeriod: serializeBookingPeriod(bookingPeriodFromEntity(owned.entity)),
+  });
 }
 
 export async function PUT(request: Request, context: RouteContext) {
@@ -69,18 +84,33 @@ export async function PUT(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  const validationError = validateAvailabilityRules(bodyParse.data.rules);
-  if (validationError) {
+  const rulesError = validateAvailabilityRules(bodyParse.data.rules);
+  if (rulesError) {
+    return NextResponse.json({ ok: false, error: rulesError }, { status: 400 });
+  }
+  const dateRulesError = validateDateRules(bodyParse.data.dateRules);
+  if (dateRulesError) {
     return NextResponse.json(
-      { ok: false, error: validationError },
+      { ok: false, error: dateRulesError },
       { status: 400 },
     );
   }
+  const periodError = validateBookingPeriod(bodyParse.data.bookingPeriod);
+  if (periodError) {
+    return NextResponse.json({ ok: false, error: periodError }, { status: 400 });
+  }
 
-  const rules = await replaceAvailabilityRulesForEntity({
+  const saved = await replaceAvailabilityForEntity({
     entityId,
     rules: bodyParse.data.rules,
+    dateRules: bodyParse.data.dateRules,
+    bookingPeriod: bodyParse.data.bookingPeriod,
   });
 
-  return NextResponse.json({ ok: true, rules });
+  return NextResponse.json({
+    ok: true,
+    rules: saved.rules,
+    dateRules: saved.dateRules,
+    bookingPeriod: serializeBookingPeriod(saved.bookingPeriod),
+  });
 }

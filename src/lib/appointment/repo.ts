@@ -10,10 +10,25 @@ import {
   lte,
   ne,
 } from "drizzle-orm";
-import { APPOINTMENT_ANONYMOUS_USER_ID } from "@/lib/appointment/constants";
+import {
+  APPOINTMENT_ANONYMOUS_USER_ID,
+  APPOINTMENT_BOOKING_PERIOD_DAYS_KINDS,
+  APPOINTMENT_BOOKING_PERIOD_TYPES,
+  APPOINTMENT_OAUTH_PROVIDER_GOOGLE,
+  type AppointmentBookingPeriodDaysKind,
+  type AppointmentBookingPeriodType,
+} from "@/lib/appointment/constants";
+import type {
+  BookingPeriodInput,
+  DateRuleInput,
+  TimeWindowInput,
+} from "@/lib/appointment/appointment-utils";
+import { UNLIMITED_BOOKING_PERIOD } from "@/lib/appointment/appointment-utils";
 import {
   appointmentApiKeys,
   appointmentAppointments,
+  appointmentAvailabilityDateRules,
+  appointmentAvailabilityDateRuleWindows,
   appointmentAvailabilityRules,
   appointmentEntities,
   appointmentOauthConnections,
@@ -26,13 +41,83 @@ import {
   type AppointmentRow,
   type AppointmentWorkspaceRow,
 } from "@/lib/appointment/schema";
-import { APPOINTMENT_OAUTH_PROVIDER_GOOGLE } from "@/lib/appointment/constants";
 import { hashApiKey } from "@/lib/auth/api-key-auth";
 import { db } from "@/lib/db/client";
 
 export type AppointmentEntityWithAvailability = AppointmentEntityRow & {
   availabilityRules: AppointmentAvailabilityRuleRow[];
+  dateRules: DateRuleInput[];
 };
+
+export function bookingPeriodFromEntity(
+  entity: Pick<
+    AppointmentEntityRow,
+    | "bookingPeriodType"
+    | "availableFrom"
+    | "availableTo"
+    | "bookingPeriodDays"
+    | "bookingPeriodDaysKind"
+  >,
+): BookingPeriodInput {
+  const type = APPOINTMENT_BOOKING_PERIOD_TYPES.includes(
+    entity.bookingPeriodType as AppointmentBookingPeriodType,
+  )
+    ? (entity.bookingPeriodType as AppointmentBookingPeriodType)
+    : "unlimited";
+  const daysKind = APPOINTMENT_BOOKING_PERIOD_DAYS_KINDS.includes(
+    entity.bookingPeriodDaysKind as AppointmentBookingPeriodDaysKind,
+  )
+    ? (entity.bookingPeriodDaysKind as AppointmentBookingPeriodDaysKind)
+    : null;
+
+  if (type === "unlimited") {
+    return { ...UNLIMITED_BOOKING_PERIOD };
+  }
+  if (type === "fixed") {
+    return {
+      type: "fixed",
+      availableFrom: entity.availableFrom,
+      availableTo: entity.availableTo,
+      days: null,
+      daysKind: null,
+    };
+  }
+  return {
+    type: "moving",
+    availableFrom: null,
+    availableTo: null,
+    days: entity.bookingPeriodDays,
+    daysKind: daysKind ?? "calendar",
+  };
+}
+
+export function serializeBookingPeriod(period: BookingPeriodInput) {
+  if (period.type === "fixed") {
+    return {
+      type: "fixed" as const,
+      availableFrom: period.availableFrom ?? null,
+      availableTo: period.availableTo ?? null,
+      days: null,
+      daysKind: null,
+    };
+  }
+  if (period.type === "moving") {
+    return {
+      type: "moving" as const,
+      availableFrom: null,
+      availableTo: null,
+      days: period.days ?? null,
+      daysKind: period.daysKind ?? "calendar",
+    };
+  }
+  return {
+    type: "unlimited" as const,
+    availableFrom: null,
+    availableTo: null,
+    days: null,
+    daysKind: null,
+  };
+}
 
 export type AppointmentWorkspaceWithEntities = AppointmentWorkspaceRow & {
   roles: AppointmentRoleRow[];
@@ -435,34 +520,132 @@ export async function listAvailabilityRulesForEntity(entityId: string) {
     );
 }
 
-export async function replaceAvailabilityRulesForEntity(options: {
+export async function listDateRulesForEntity(
+  entityId: string,
+): Promise<DateRuleInput[]> {
+  const rules = await db
+    .select()
+    .from(appointmentAvailabilityDateRules)
+    .where(eq(appointmentAvailabilityDateRules.entityId, entityId))
+    .orderBy(asc(appointmentAvailabilityDateRules.date));
+  return assembleDateRules(rules);
+}
+
+async function assembleDateRules(
+  rules: Array<{ id: string; date: string }>,
+): Promise<DateRuleInput[]> {
+  if (rules.length === 0) {
+    return [];
+  }
+  const windows = await db
+    .select()
+    .from(appointmentAvailabilityDateRuleWindows)
+    .where(
+      inArray(
+        appointmentAvailabilityDateRuleWindows.ruleId,
+        rules.map((rule) => rule.id),
+      ),
+    )
+    .orderBy(
+      asc(appointmentAvailabilityDateRuleWindows.startTime),
+      asc(appointmentAvailabilityDateRuleWindows.endTime),
+    );
+
+  const windowsByRule = new Map<string, TimeWindowInput[]>();
+  for (const window of windows) {
+    const existing = windowsByRule.get(window.ruleId) ?? [];
+    existing.push({
+      startTime: window.startTime,
+      endTime: window.endTime,
+    });
+    windowsByRule.set(window.ruleId, existing);
+  }
+
+  return rules.map((rule) => ({
+    date: rule.date,
+    windows: windowsByRule.get(rule.id) ?? [],
+  }));
+}
+
+export async function replaceAvailabilityForEntity(options: {
   entityId: string;
   rules: Array<{
     dayOfWeek: number;
     startTime: string;
     endTime: string;
   }>;
+  dateRules: DateRuleInput[];
+  bookingPeriod: BookingPeriodInput;
 }) {
+  const period = serializeBookingPeriod(options.bookingPeriod);
+
   await db.transaction(async (tx) => {
+    await tx
+      .update(appointmentEntities)
+      .set({
+        bookingPeriodType: period.type,
+        availableFrom: period.availableFrom,
+        availableTo: period.availableTo,
+        bookingPeriodDays: period.days,
+        bookingPeriodDaysKind: period.daysKind,
+        updatedAt: new Date(),
+      })
+      .where(eq(appointmentEntities.id, options.entityId));
+
     await tx
       .delete(appointmentAvailabilityRules)
       .where(eq(appointmentAvailabilityRules.entityId, options.entityId));
 
-    if (options.rules.length === 0) {
-      return;
+    if (options.rules.length > 0) {
+      await tx.insert(appointmentAvailabilityRules).values(
+        options.rules.map((rule) => ({
+          entityId: options.entityId,
+          dayOfWeek: rule.dayOfWeek,
+          startTime: rule.startTime,
+          endTime: rule.endTime,
+        })),
+      );
     }
 
-    await tx.insert(appointmentAvailabilityRules).values(
-      options.rules.map((rule) => ({
-        entityId: options.entityId,
-        dayOfWeek: rule.dayOfWeek,
-        startTime: rule.startTime,
-        endTime: rule.endTime,
-      })),
-    );
+    await tx
+      .delete(appointmentAvailabilityDateRules)
+      .where(eq(appointmentAvailabilityDateRules.entityId, options.entityId));
+
+    for (const dateRule of options.dateRules) {
+      const inserted = await tx
+        .insert(appointmentAvailabilityDateRules)
+        .values({
+          entityId: options.entityId,
+          date: dateRule.date,
+        })
+        .returning({ id: appointmentAvailabilityDateRules.id });
+      const ruleId = inserted[0]?.id;
+      if (!ruleId || dateRule.windows.length === 0) {
+        continue;
+      }
+      await tx.insert(appointmentAvailabilityDateRuleWindows).values(
+        dateRule.windows.map((window) => ({
+          ruleId,
+          startTime: window.startTime,
+          endTime: window.endTime,
+        })),
+      );
+    }
   });
 
-  return listAvailabilityRulesForEntity(options.entityId);
+  const [rules, dateRules, entity] = await Promise.all([
+    listAvailabilityRulesForEntity(options.entityId),
+    listDateRulesForEntity(options.entityId),
+    getEntityById(options.entityId),
+  ]);
+
+  return {
+    rules,
+    dateRules,
+    bookingPeriod: entity
+      ? bookingPeriodFromEntity(entity)
+      : serializeBookingPeriod(options.bookingPeriod),
+  };
 }
 
 export async function listAppointmentsForEntityInRange(options: {
@@ -670,15 +853,25 @@ export async function getWorkspaceWithEntities(workspaceId: string) {
   }
 
   const entityIds = entities.map((entity) => entity.id);
-  const rules = await db
-    .select()
-    .from(appointmentAvailabilityRules)
-    .where(inArray(appointmentAvailabilityRules.entityId, entityIds))
-    .orderBy(
-      asc(appointmentAvailabilityRules.entityId),
-      asc(appointmentAvailabilityRules.dayOfWeek),
-      asc(appointmentAvailabilityRules.startTime),
-    );
+  const [rules, dateRuleRows] = await Promise.all([
+    db
+      .select()
+      .from(appointmentAvailabilityRules)
+      .where(inArray(appointmentAvailabilityRules.entityId, entityIds))
+      .orderBy(
+        asc(appointmentAvailabilityRules.entityId),
+        asc(appointmentAvailabilityRules.dayOfWeek),
+        asc(appointmentAvailabilityRules.startTime),
+      ),
+    db
+      .select()
+      .from(appointmentAvailabilityDateRules)
+      .where(inArray(appointmentAvailabilityDateRules.entityId, entityIds))
+      .orderBy(
+        asc(appointmentAvailabilityDateRules.entityId),
+        asc(appointmentAvailabilityDateRules.date),
+      ),
+  ]);
 
   const rulesByEntity = new Map<string, AppointmentAvailabilityRuleRow[]>();
   for (const rule of rules) {
@@ -687,12 +880,47 @@ export async function getWorkspaceWithEntities(workspaceId: string) {
     rulesByEntity.set(rule.entityId, existing);
   }
 
+  const dateRulesByEntity = new Map<string, DateRuleInput[]>();
+  if (dateRuleRows.length > 0) {
+    const windows = await db
+      .select()
+      .from(appointmentAvailabilityDateRuleWindows)
+      .where(
+        inArray(
+          appointmentAvailabilityDateRuleWindows.ruleId,
+          dateRuleRows.map((rule) => rule.id),
+        ),
+      )
+      .orderBy(
+        asc(appointmentAvailabilityDateRuleWindows.startTime),
+        asc(appointmentAvailabilityDateRuleWindows.endTime),
+      );
+    const windowsByRule = new Map<string, TimeWindowInput[]>();
+    for (const window of windows) {
+      const existing = windowsByRule.get(window.ruleId) ?? [];
+      existing.push({
+        startTime: window.startTime,
+        endTime: window.endTime,
+      });
+      windowsByRule.set(window.ruleId, existing);
+    }
+    for (const rule of dateRuleRows) {
+      const existing = dateRulesByEntity.get(rule.entityId) ?? [];
+      existing.push({
+        date: rule.date,
+        windows: windowsByRule.get(rule.id) ?? [],
+      });
+      dateRulesByEntity.set(rule.entityId, existing);
+    }
+  }
+
   return {
     ...workspace,
     roles,
     entities: entities.map((entity) => ({
       ...entity,
       availabilityRules: rulesByEntity.get(entity.id) ?? [],
+      dateRules: dateRulesByEntity.get(entity.id) ?? [],
     })),
   } satisfies AppointmentWorkspaceWithEntities;
 }
