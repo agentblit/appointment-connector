@@ -58,13 +58,14 @@ Each online entity connects its own Google account from the dashboard. On bookin
 
 1. Create a Google Cloud OAuth client (Web application).
 2. Enable the Google Calendar API.
-3. Add this exact redirect URI in Google Cloud Console (Authorized redirect URIs):
+3. On the OAuth consent screen, add scopes `calendar` and `userinfo.email` (creating Meet links needs full calendar access, not only `calendar.events`).
+4. Add this exact redirect URI in Google Cloud Console (Authorized redirect URIs):
 
    `{PUBLIC_BASE_URL}/api/workspace/integrations/google/callback`
 
    Example for local: `http://localhost:3080/api/workspace/integrations/google/callback`
-4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
-5. Edit an entity → connect Google → switch meeting mode to **Online**.
+5. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+6. Edit an entity → connect Google (reconnect after any scope change) → switch meeting mode to **Online**.
 
 Offline entities store an address and/or Google Maps URL instead; no Google connection is required.
 

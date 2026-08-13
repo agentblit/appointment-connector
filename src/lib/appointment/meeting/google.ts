@@ -8,7 +8,9 @@ import {
 import { decryptSecret, encryptSecret } from "@/lib/crypto/token-cipher";
 
 const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/calendar.events",
+  // Full calendar scope is required to attach Google Meet via conferenceData.
+  // calendar.events alone returns "insufficient authentication scopes".
+  "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
