@@ -2,6 +2,7 @@
 
 import { Calendar, Plus, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { toast } from "sonner";
 import { TimeInput } from "@/components/availability-editor";
 import {
   addCalendarDays,
@@ -217,6 +218,9 @@ export function ExceptionsEditor({
     setOverlapError(error);
     onValidityChange?.(!error);
     if (error) {
+      if (error !== overlapError) {
+        toast.error(error);
+      }
       // Keep the last valid draft in the parent so save cannot apply a silent merge.
       return;
     }
@@ -414,12 +418,6 @@ export function ExceptionsEditor({
       ) : (
         <p className="text-sm text-muted-foreground">No exceptions yet.</p>
       )}
-
-      {overlapError ? (
-        <p className="text-sm text-destructive" role="alert">
-          {overlapError}
-        </p>
-      ) : null}
 
       <button
         type="button"

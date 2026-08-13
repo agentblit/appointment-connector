@@ -10,7 +10,7 @@ import {
 import { useWorkspace } from "@/lib/dashboard/workspace-context";
 
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const { email, error, notice, loading, ready, signOut } = useWorkspace();
+  const { email, loading, ready, signOut } = useWorkspace();
   const { collapsed, onCollapsedChange } = useSidebarCollapsed();
 
   if (loading && !ready) {
@@ -33,26 +33,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <DashboardSidebar collapsed={collapsed} />
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl px-4 py-8">
-            <div
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              className="mb-5 empty:hidden"
-            >
-              {error ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                  {error}
-                </div>
-              ) : null}
-              {!error && notice ? (
-                <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground">
-                  {notice}
-                </div>
-              ) : null}
-            </div>
-            {children}
-          </div>
+          <div className="mx-auto w-full max-w-3xl px-4 py-8">{children}</div>
         </main>
       </div>
     </div>

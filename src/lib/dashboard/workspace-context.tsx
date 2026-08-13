@@ -6,11 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { APPOINTMENT_TIMEZONES } from "@/lib/appointment/constants";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -24,8 +24,6 @@ type WorkspaceContextValue = {
   email: string;
   loading: boolean;
   ready: boolean;
-  error: string;
-  notice: string;
   setError: (message: string) => void;
   setNotice: (message: string) => void;
   entities: EntityRow[];
@@ -49,6 +47,18 @@ type WorkspaceContextValue = {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
+function toastError(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) return;
+  toast.error(trimmed);
+}
+
+function toastNotice(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) return;
+  toast.success(trimmed);
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -57,29 +67,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = Boolean(session?.user);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [notice, setNoticeState] = useState("");
-  const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const setNotice = useCallback((message: string) => {
-    if (noticeTimeoutRef.current) {
-      clearTimeout(noticeTimeoutRef.current);
-      noticeTimeoutRef.current = null;
-    }
-    setNoticeState(message);
-    if (!message.trim()) return;
-    noticeTimeoutRef.current = setTimeout(() => {
-      setNoticeState("");
-      noticeTimeoutRef.current = null;
-    }, 3500);
+  const setError = useCallback((message: string) => {
+    toastError(message);
   }, []);
-
-  useEffect(() => {
-    return () => {
-      if (noticeTimeoutRef.current) {
-        clearTimeout(noticeTimeoutRef.current);
-      }
-    };
+  const setNotice = useCallback((message: string) => {
+    toastNotice(message);
   }, []);
 
   const [ready, setReady] = useState(false);
@@ -101,7 +93,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
-    setError("");
     try {
       const preferredTimezone = browserTimezone();
       const url = new URL("/api/workspace", window.location.origin);
@@ -153,7 +144,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setError]);
 
   useEffect(() => {
     if (sessionPending) return;
@@ -191,7 +182,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       router.replace(query ? `${pathname}?${query}` : pathname);
     });
-  }, [searchParams, pathname, router, loadWorkspace]);
+  }, [searchParams, pathname, router, loadWorkspace, setError, setNotice]);
 
   const signOut = useCallback(async () => {
     await authClient.signOut();
@@ -203,8 +194,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       email: session?.user?.email ?? "",
       loading: loading || sessionPending,
       ready,
-      error,
-      notice,
       setError,
       setNotice,
       entities,
@@ -230,8 +219,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       loading,
       sessionPending,
       ready,
-      error,
-      notice,
+      setError,
       setNotice,
       entities,
       entityLabel,

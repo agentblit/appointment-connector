@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Calendar } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { authClient } from "@/lib/auth-client";
 
@@ -35,18 +36,20 @@ export function AuthForms({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [submitError, setSubmitError] = useState("");
   const [loading, setLoading] = useState(false);
-  const error = submitError || queryError || "";
 
   useEffect(() => {
     if (sessionPending || !session?.user) return;
     router.replace(resolveAfterAuth(nextPath));
   }, [sessionPending, session, nextPath, router]);
 
+  useEffect(() => {
+    if (!queryError?.trim()) return;
+    toast.error(queryError);
+  }, [queryError]);
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    setSubmitError("");
     setLoading(true);
     try {
       if (mode === "signup") {
@@ -56,7 +59,7 @@ export function AuthForms({
           password,
         });
         if (result.error) {
-          setSubmitError(result.error.message ?? "Couldn't create account");
+          toast.error(result.error.message ?? "Couldn't create account");
           return;
         }
       } else {
@@ -65,14 +68,14 @@ export function AuthForms({
           password,
         });
         if (result.error) {
-          setSubmitError(result.error.message ?? "Couldn't sign in");
+          toast.error(result.error.message ?? "Couldn't sign in");
           return;
         }
       }
 
       router.push(resolveAfterAuth(nextPath));
     } catch {
-      setSubmitError("Something went wrong. Try again.");
+      toast.error("Something went wrong. Try again.");
     } finally {
       setLoading(false);
     }
@@ -115,14 +118,6 @@ export function AuthForms({
               onSubmit={(e) => void onSubmit(e)}
               className="flex flex-col gap-4"
             >
-              {error ? (
-                <div
-                  className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
-                  role="alert"
-                >
-                  {error}
-                </div>
-              ) : null}
               {mode === "signup" ? (
                 <div>
                   <label
