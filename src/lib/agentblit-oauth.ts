@@ -26,7 +26,8 @@ export function agentblitOAuthConfig() {
     clientId: requireEnv("AGENTBLIT_CLIENT_ID"),
     clientSecret: requireEnv("AGENTBLIT_CLIENT_SECRET"),
     scopes: ["openid", "profile", "email"],
-    // RP-initiated logout: signing out here also ends the console session.
-    postLogoutRedirectURI: `${requireEnv("PUBLIC_BASE_URL")}/`,
+    // Full document navigation to /login after logout so OAuth state/PKCE
+    // cookies are set by the Route Handler (client soft-nav drops them).
+    postLogoutRedirectURI: `${requireEnv("PUBLIC_BASE_URL")}/login`,
   };
 }

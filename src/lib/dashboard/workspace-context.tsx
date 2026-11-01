@@ -152,7 +152,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (sessionPending || signingOutRef.current) return;
     if (!isAuthenticated) {
-      router.replace(
+      // Hard navigation: soft router.replace("/login") drops OAuth Set-Cookie
+      // (state/PKCE) and the callback then fails with invalid_code.
+      window.location.assign(
         "/login?next=" + encodeURIComponent("/entities"),
       );
       return;
@@ -160,7 +162,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     queueMicrotask(() => {
       void loadWorkspace();
     });
-  }, [sessionPending, isAuthenticated, loadWorkspace, router]);
+  }, [sessionPending, isAuthenticated, loadWorkspace]);
 
   useEffect(() => {
     const googleStatus = searchParams.get("google");
@@ -201,8 +203,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       window.location.assign(data.url);
       return;
     }
-    router.replace("/login");
-  }, [router]);
+    window.location.assign("/login");
+  }, []);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
