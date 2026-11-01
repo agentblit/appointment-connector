@@ -12,7 +12,7 @@
     "db:clean": "node scripts/clean-db.mjs"
   },
   "dependencies": {
-    "better-auth": "^1.6.23",
+    "better-auth": "^1.7.15",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^174.0.1",

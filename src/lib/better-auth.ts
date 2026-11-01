@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
+import { genericOAuth } from "better-auth/plugins";
 import { Pool } from "pg";
+import { agentblitOAuthConfig } from "@/lib/agentblit-oauth";
 
 // Real Pool instance required — better-auth detects the pg adapter via instanceof.
 // Placeholder URL is only for `next build` when DATABASE_URL is unset.
@@ -11,29 +13,19 @@ const pool = new Pool({
   options: "-c search_path=auth",
 });
 
+// Users only ever sign in with their Agentblit account.
 export const auth = betterAuth({
   baseURL: process.env.PUBLIC_BASE_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: pool,
-  emailAndPassword: {
-    enabled: true,
-    minPasswordLength: 8,
-  },
   // Avoid colliding with default `better-auth.*` cookies on localhost.
   advanced: {
     cookiePrefix: "appointment-connector",
   },
-  databaseHooks: {
-    user: {
-      create: {
-        after: async (user) => {
-          await pool.query(
-            `UPDATE auth."user" SET "emailVerified" = true WHERE id = $1`,
-            [user.id],
-          );
-        },
-      },
-    },
-  },
-  plugins: [nextCookies()],
+  plugins: [
+    genericOAuth({
+      config: [agentblitOAuthConfig()],
+    }),
+    nextCookies(),
+  ],
 });

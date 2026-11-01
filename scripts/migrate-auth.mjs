@@ -2,6 +2,7 @@ import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+import { genericOAuth } from "better-auth/plugins";
 import { Pool } from "pg";
 
 const cwd = process.cwd();
@@ -21,14 +22,25 @@ const pool = new Pool({
 
 await pool.query(`CREATE SCHEMA IF NOT EXISTS auth`);
 
+// Mirrors `src/lib/better-auth.ts` so migrations create the same columns.
 const auth = betterAuth({
   baseURL: process.env.PUBLIC_BASE_URL,
   secret: process.env.BETTER_AUTH_SECRET ?? "migrate-placeholder-secret",
   database: pool,
-  emailAndPassword: {
-    enabled: true,
-    minPasswordLength: 8,
-  },
+  plugins: [
+    genericOAuth({
+      config: [
+        {
+          providerId: "agentblit",
+          clientId: "migrate-placeholder",
+          clientSecret: "migrate-placeholder",
+          authorizationUrl: "https://example.com/authorize",
+          tokenUrl: "https://example.com/token",
+          userInfoUrl: "https://example.com/userinfo",
+        },
+      ],
+    }),
+  ],
 });
 
 const { toBeCreated, toBeAdded, runMigrations } = await getMigrations(
@@ -44,5 +56,8 @@ if (toBeCreated.length === 0 && toBeAdded.length === 0) {
   await runMigrations();
   console.log("Auth migrations: done");
 }
+
+await pool.query(`DROP INDEX IF EXISTS auth.user_agentblit_user_id_uidx`);
+await pool.query(`ALTER TABLE auth."user" DROP COLUMN IF EXISTS "agentblitUserId"`);
 
 await pool.end();

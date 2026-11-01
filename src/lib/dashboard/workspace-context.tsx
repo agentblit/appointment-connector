@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -65,6 +66,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const isAuthenticated = Boolean(session?.user);
+  // Suppress the unauthenticated → /login effect while RP logout navigates away.
+  const signingOutRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const setError = useCallback((message: string) => {
@@ -147,9 +150,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [setError]);
 
   useEffect(() => {
-    if (sessionPending) return;
+    if (sessionPending || signingOutRef.current) return;
     if (!isAuthenticated) {
-      router.replace("/login?next=" + encodeURIComponent("/entities"));
+      router.replace(
+        "/login?next=" + encodeURIComponent("/entities"),
+      );
       return;
     }
     queueMicrotask(() => {
@@ -185,7 +190,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [searchParams, pathname, router, loadWorkspace, setError, setNotice]);
 
   const signOut = useCallback(async () => {
-    await authClient.signOut();
+    // Block the session-loss effect from starting a new OAuth authorize while
+    // RP-initiated logout clears the console session (that race → invalid_code).
+    signingOutRef.current = true;
+    const { data } = await authClient.signOut({
+      // Handle navigation ourselves so we don't race React soft-nav.
+      disableRedirect: true,
+    });
+    if (data?.url) {
+      window.location.assign(data.url);
+      return;
+    }
     router.replace("/login");
   }, [router]);
 
